@@ -32,8 +32,12 @@ class Jugador:
         self.en_suelo = True
         self.agachado = False
         self.mirando_derecha = True
+        self.moviendose = False
+        self.frame_caminata = 0
+        self.tiempo_animacion = 0
 
     def mover(self, teclas, dt):
+        se_mueve = False
         agachar = (teclas[pygame.K_DOWN] or teclas[pygame.K_s]) and self.en_suelo
         if agachar != self.agachado:
             piso = self.rect.bottom
@@ -44,10 +48,22 @@ class Jugador:
         if not self.agachado:
             if teclas[pygame.K_LEFT] or teclas[pygame.K_a]:
                 self.rect.x -= VELOCIDAD_MOV * dt
-                self.mirando_derecha = False
+                self.mirando_derecha = True
+                se_mueve = True
             if teclas[pygame.K_RIGHT] or teclas[pygame.K_d]:
                 self.rect.x += VELOCIDAD_MOV * dt
-                self.mirando_derecha = True
+                self.mirando_derecha = False
+                se_mueve = True
+
+        self.moviendose = se_mueve
+        if se_mueve:
+            self.tiempo_animacion += dt
+            if self.tiempo_animacion >= 0.1:
+                self.tiempo_animacion -= 0.1
+                self.frame_caminata = (self.frame_caminata + 1) % 3
+        else:
+            self.frame_caminata = 0
+            self.tiempo_animacion = 0
         self.rect.left = max(0, self.rect.left)
         self.rect.right = min(NIVEL_ANCHO, self.rect.right)
 
@@ -65,14 +81,21 @@ class Jugador:
     def dibujar(self, superficie, camara_x):
         if self.agachado:
             sprite = self.sprites["agachado_izq"] if self.mirando_derecha else self.sprites["agachado_der"]
+        elif not self.en_suelo:
+            sprite = self.sprites["saltar_izq"] if self.mirando_derecha else self.sprites["saltar_der"]
+        elif not self.moviendose:
+            sprite = self.sprites["idle_der"] if self.mirando_derecha else self.sprites["idle_izq"]
         else:
-            sprite = self.sprites["izq"] if self.mirando_derecha else self.sprites["der"]
-        superficie.blit(sprite, self.rect.move(-camara_x, 0))
+            direccion = "caminar_der" if self.mirando_derecha else "caminar_izq"
+            sprite = self.sprites[direccion][self.frame_caminata]
+        destino = sprite.get_rect(midbottom=self.rect.move(-camara_x, 0).midbottom)
+        superficie.blit(sprite, destino)
 
 
 class Enemigo:
-    def __init__(self, x, rango=60, velocidad=120):
+    def __init__(self, x, sprite, rango=60, velocidad=120):
         self.rect = pygame.Rect(x, SUELO_Y - TAM, TAM, TAM)
+        self.sprite = sprite
         self.x_inicial = x
         self.rango = rango
         self.vel_x = velocidad  # px/seg
@@ -83,12 +106,13 @@ class Enemigo:
             self.vel_x *= -1
 
     def dibujar(self, superficie, camara_x):
-        pygame.draw.rect(superficie, ROJO, self.rect.move(-camara_x, 0), border_radius=6)
+        destino = self.sprite.get_rect(midbottom=self.rect.move(-camara_x, 0).midbottom)
+        superficie.blit(self.sprite, destino)
 
 
-def crear_enemigos():
+def crear_enemigos(sprite):
     posiciones = [500, 1100, 1700, 2300, 2850]
-    return [Enemigo(x) for x in posiciones]
+    return [Enemigo(x, sprite) for x in posiciones]
 
 
 def pantalla_victoria(pantalla, reloj, fuente_grande, fuente_media):
@@ -111,7 +135,7 @@ def pantalla_victoria(pantalla, reloj, fuente_grande, fuente_media):
 
 def jugar(pantalla, reloj, sprites, fuente_grande, fuente_media):
     jugador = Jugador(sprites)
-    enemigos = crear_enemigos()
+    enemigos = crear_enemigos(sprites["enemigo"])
 
     while True:
         dt = reloj.tick(FPS) / 1000.0

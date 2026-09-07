@@ -26,23 +26,45 @@ fuente_media = pygame.font.SysFont("Arial", 36)
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
-ESCALA_SPRITE = 3
-_sprite_original = pygame.image.load(os.path.join(CARPETA, "assets/personajes/benja.png")).convert_alpha()
+ESCALA_SPRITE = 2
 
-JUG_ANCHO = _sprite_original.get_width() * ESCALA_SPRITE
-JUG_ALTO = _sprite_original.get_height() * ESCALA_SPRITE
-JUG_ALTO_AGACHADO = JUG_ALTO // 2
 
-SPRITE_DER = pygame.transform.scale(_sprite_original, (JUG_ANCHO, JUG_ALTO))
-SPRITE_IZQ = pygame.transform.flip(SPRITE_DER, True, False)
-SPRITE_AGACHADO_DER = pygame.transform.scale(_sprite_original, (JUG_ANCHO, JUG_ALTO_AGACHADO))
+def cargar_sprite(nombre):
+    original = pygame.image.load(os.path.join(CARPETA, "assets/personajes", nombre)).convert_alpha()
+    return pygame.transform.scale(
+        original,
+        (original.get_width() * ESCALA_SPRITE, original.get_height() * ESCALA_SPRITE),
+    )
+
+
+SPRITES_CAMINAR_DER = [
+    cargar_sprite("Benja frame 1.png"),
+    cargar_sprite("Benja frame 2.png"),
+    cargar_sprite("Benja frame 3.png"),
+]
+SPRITES_CAMINAR_IZQ = [pygame.transform.flip(sprite, True, False) for sprite in SPRITES_CAMINAR_DER]
+SPRITE_IDLE_DER = cargar_sprite("benja.png")
+SPRITE_IDLE_IZQ = pygame.transform.flip(SPRITE_IDLE_DER, True, False)
+SPRITE_SALTANDO_DER = cargar_sprite("Benja saltando.png")
+SPRITE_SALTANDO_IZQ = pygame.transform.flip(SPRITE_SALTANDO_DER, True, False)
+SPRITE_AGACHADO_DER = cargar_sprite("Benja agachado.png")
 SPRITE_AGACHADO_IZQ = pygame.transform.flip(SPRITE_AGACHADO_DER, True, False)
+SPRITE_GAGAMBA = pygame.transform.scale(cargar_sprite("gagamba.png"), (50, 42))
+
+JUG_ANCHO = SPRITES_CAMINAR_DER[0].get_width()
+JUG_ALTO = SPRITES_CAMINAR_DER[0].get_height()
+JUG_ALTO_AGACHADO = SPRITE_AGACHADO_DER.get_height()
 
 sprites = {
-    "der": SPRITE_DER,
-    "izq": SPRITE_IZQ,
+    "idle_der": SPRITE_IDLE_DER,
+    "idle_izq": SPRITE_IDLE_IZQ,
+    "caminar_der": SPRITES_CAMINAR_DER,
+    "caminar_izq": SPRITES_CAMINAR_IZQ,
+    "saltar_der": SPRITE_SALTANDO_DER,
+    "saltar_izq": SPRITE_SALTANDO_IZQ,
     "agachado_der": SPRITE_AGACHADO_DER,
     "agachado_izq": SPRITE_AGACHADO_IZQ,
+    "enemigo": SPRITE_GAGAMBA,
     "ancho": JUG_ANCHO,
     "alto": JUG_ALTO,
     "alto_agachado": JUG_ALTO_AGACHADO,
