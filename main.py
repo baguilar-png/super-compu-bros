@@ -78,7 +78,11 @@ LOGO = pygame.transform.scale(
 )
 
 _play_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/play.png")).convert_alpha()
-PLAY_BUTTON = pygame.transform.scale(_play_original, (150, 150))
+PLAY_BUTTON = pygame.transform.scale(_play_original, (200, 65))
+_instrucciones_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/instrucciones.png")).convert_alpha()
+INSTRUCCIONES_BUTTON = pygame.transform.scale(_instrucciones_original, (200, 65))
+_exit_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/exit.png")).convert_alpha()
+EXIT_BUTTON = pygame.transform.scale(_exit_original, (150, 150))
 
 
 def dibujar_boton(superficie, texto, rect, color_fondo, color_texto, fuente):
@@ -101,8 +105,8 @@ def menu():
         color_instrucciones = VERDE if boton_instrucciones.collidepoint(mouse_pos) else GRIS
         color_exit = ROJO if boton_exit.collidepoint(mouse_pos) else GRIS
         pantalla.blit(PLAY_BUTTON, PLAY_BUTTON.get_rect(center=boton_play.center))
-        dibujar_boton(pantalla, "INSTRUCCIONES", boton_instrucciones, color_instrucciones, BLANCO, pygame.font.SysFont("Arial", 22))
-        dibujar_boton(pantalla, "EXIT", boton_exit, color_exit, BLANCO, fuente_media)
+        pantalla.blit(INSTRUCCIONES_BUTTON, INSTRUCCIONES_BUTTON.get_rect(center=boton_instrucciones.center))
+        pantalla.blit(EXIT_BUTTON, EXIT_BUTTON.get_rect(center=boton_exit.center))
 
         for evento in pygame.event.get():
             if evento.type == pygame.QUIT:
