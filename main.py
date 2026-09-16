@@ -428,7 +428,7 @@ _play_original = pygame.image.load(
 
 PLAY_BUTTON = pygame.transform.scale(
     _play_original,
-    (150, 150)
+    (200, 65)
 )
 
 
