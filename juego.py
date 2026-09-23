@@ -1,5 +1,6 @@
 import pygame
 import sys
+import os
 
 
 # ==========================================================
@@ -33,6 +34,39 @@ SUELO_Y = ALTO - 60
 META_X = NIVEL_ANCHO - 100
 
 VIDAS_INICIALES = 3
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# Imagen del nivel: 3200x600 (NIVEL_ANCHO x ALTO).
+# No trae el bloque de pasto dibujado: el suelo (SUELO_Y) sigue existiendo
+# para la fisica, pero es invisible y el personaje parece caminar sobre
+# el cesped de la cancha.
+FONDO = pygame.image.load(
+    os.path.join(
+        BASE_DIR,
+        "assets",
+        "fondos",
+        "fondo.png"
+    )
+)
+
+if FONDO.get_size() != (NIVEL_ANCHO, ALTO):
+
+    FONDO = pygame.transform.scale(
+        FONDO,
+        (NIVEL_ANCHO, ALTO)
+    )
+
+
+def dibujar_fondo(pantalla, camara_x):
+
+    # Dibuja solo la parte del nivel que entra en pantalla,
+    # asi el fondo se desplaza junto con la camara.
+    pantalla.blit(
+        FONDO,
+        (0, 0),
+        (int(camara_x), 0, ANCHO, ALTO)
+    )
 
 
 # ==========================================================
@@ -683,20 +717,9 @@ def animacion_muerte(
         y += velocidad_y * dt
 
 
-        pantalla.fill(
-            CELESTE
-        )
-
-
-        pygame.draw.rect(
+        dibujar_fondo(
             pantalla,
-            VERDE_SUELO,
-            (
-                0,
-                SUELO_Y,
-                ANCHO,
-                ALTO - SUELO_Y
-            )
+            camara_x
         )
 
 
@@ -896,6 +919,10 @@ def jugar(
     fuente_grande,
     fuente_media
 ):
+
+    # Optimiza la imagen del nivel (la ventana ya esta creada aca)
+    global FONDO
+    FONDO = FONDO.convert()
 
     jugador = Jugador(
         sprites
@@ -1183,24 +1210,9 @@ def jugar(
         # FONDO
         # ==================================================
 
-        pantalla.fill(
-            CELESTE
-        )
-
-
-        # ==================================================
-        # SUELO
-        # ==================================================
-
-        pygame.draw.rect(
+        dibujar_fondo(
             pantalla,
-            VERDE_SUELO,
-            (
-                -camara_x,
-                SUELO_Y,
-                NIVEL_ANCHO,
-                ALTO - SUELO_Y
-            )
+            camara_x
         )
 
 
