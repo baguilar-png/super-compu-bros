@@ -32,6 +32,8 @@ SUELO_Y = ALTO - 60
 
 META_X = NIVEL_ANCHO - 100
 
+VIDAS_INICIALES = 3
+
 
 # ==========================================================
 # JUGADOR
@@ -455,11 +457,12 @@ class Enemigo:
             TAM
         )
 
+        self.sprite_original = sprite
+
         self.sprite = sprite
 
-        # Máscara de píxeles del enemigo
         self.mask = pygame.mask.from_surface(
-            sprite
+            self.sprite
         )
 
         self.x_inicial = x
@@ -468,8 +471,17 @@ class Enemigo:
 
         self.vel_x = velocidad
 
+        self.aplastado = False
+
+        self.tiempo_aplastado = 0
+
 
     def mover(self, dt):
+
+        if self.aplastado:
+
+            return
+
 
         self.rect.x += (
             self.vel_x * dt
@@ -486,6 +498,51 @@ class Enemigo:
         ):
 
             self.vel_x *= -1
+
+
+    def aplastar(self):
+
+        if self.aplastado:
+
+            return
+
+
+        self.aplastado = True
+
+        self.tiempo_aplastado = 0.45
+
+        ancho = 60
+
+        alto = 15
+
+        self.sprite = pygame.transform.scale(
+            self.sprite_original,
+            (
+                ancho,
+                alto
+            )
+        )
+
+        self.rect.width = ancho
+        self.rect.height = alto
+
+        self.rect.bottom = SUELO_Y
+
+        self.mask = pygame.mask.from_surface(
+            self.sprite
+        )
+
+
+    def actualizar(self, dt):
+
+        if not self.aplastado:
+
+            return True
+
+
+        self.tiempo_aplastado -= dt
+
+        return self.tiempo_aplastado > 0
 
 
     def dibujar(
@@ -573,6 +630,185 @@ def colision_por_pixeles(
             offset_y
         )
     ) is not None
+
+
+# ==========================================================
+# ANIMACIÓN DE MUERTE
+# ==========================================================
+
+def animacion_muerte(
+    pantalla,
+    reloj,
+    jugador,
+    sprites,
+    camara_x
+):
+
+    if jugador.mirando_derecha:
+
+        sprite = sprites["idle_der"]
+
+    else:
+
+        sprite = sprites["idle_izq"]
+
+
+    x = jugador.rect.centerx - camara_x
+
+    y = jugador.rect.bottom - sprite.get_height()
+
+    velocidad_y = -900
+
+    tiempo = 0
+
+    duracion = 1.25
+
+
+    while tiempo < duracion:
+
+        dt = (
+            reloj.tick(FPS)
+            / 1000.0
+        )
+
+        dt = min(
+            dt,
+            0.05
+        )
+
+        tiempo += dt
+
+        velocidad_y += GRAVEDAD * dt
+
+        y += velocidad_y * dt
+
+
+        pantalla.fill(
+            CELESTE
+        )
+
+
+        pygame.draw.rect(
+            pantalla,
+            VERDE_SUELO,
+            (
+                0,
+                SUELO_Y,
+                ANCHO,
+                ALTO - SUELO_Y
+            )
+        )
+
+
+        pantalla.blit(
+            sprite,
+            (
+                int(
+                    x - sprite.get_width() / 2
+                ),
+                int(y)
+            )
+        )
+
+
+        pygame.display.flip()
+
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+
+                pygame.quit()
+                sys.exit()
+
+
+# ==========================================================
+# PANTALLA DE VIDAS
+# ==========================================================
+
+def pantalla_vidas(
+    pantalla,
+    reloj,
+    sprites,
+    vidas,
+    fuente_media
+):
+
+    duracion = 2.0
+
+    tiempo = 0
+
+
+    if sprites.get("idle_der"):
+
+        sprite = sprites["idle_der"]
+
+    else:
+
+        sprite = sprites["idle_izq"]
+
+
+    texto_vidas = fuente_media.render(
+        "VIDAS: " + str(vidas),
+        True,
+        BLANCO
+    )
+
+
+    while tiempo < duracion:
+
+        dt = (
+            reloj.tick(FPS)
+            / 1000.0
+        )
+
+        dt = min(
+            dt,
+            0.05
+        )
+
+        tiempo += dt
+
+
+        pantalla.fill(
+            NEGRO
+        )
+
+
+        destino_sprite = sprite.get_rect(
+            center=(
+                ANCHO // 2 - 100,
+                ALTO // 2
+            )
+        )
+
+
+        pantalla.blit(
+            sprite,
+            destino_sprite
+        )
+
+
+        pantalla.blit(
+            texto_vidas,
+            texto_vidas.get_rect(
+                center=(
+                    ANCHO // 2 + 120,
+                    ALTO // 2
+                )
+            )
+        )
+
+
+        pygame.display.flip()
+
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+
+                pygame.quit()
+                sys.exit()
 
 
 # ==========================================================
@@ -669,6 +905,8 @@ def jugar(
         sprites["enemigo"]
     )
 
+    vidas = VIDAS_INICIALES
+
 
     while True:
 
@@ -718,6 +956,10 @@ def jugar(
         # JUGADOR
         # ==================================================
 
+        jugador_bottom_anterior = (
+            jugador.rect.bottom
+        )
+
         jugador.mover(
             teclas,
             dt
@@ -734,22 +976,177 @@ def jugar(
                 dt
             )
 
+            enemigo.actualizar(
+                dt
+            )
+
 
         # ==================================================
         # COLISIÓN
         # ==================================================
 
-        if any(
-            colision_por_pixeles(
+        murio = False
+
+
+        for enemigo in enemigos:
+
+            if enemigo.aplastado:
+
+                continue
+
+
+            if not jugador.rect.colliderect(
+                enemigo.rect
+            ):
+
+                continue
+
+
+            esta_cayendo = (
+                jugador.vel_y > 0
+            )
+
+
+            diferencia_vertical = (
+                enemigo.rect.top
+                - jugador.rect.bottom
+            )
+
+
+            viene_desde_arriba = (
+                jugador_bottom_anterior
+                <= enemigo.rect.top + 18
+            )
+
+
+            esta_cerca_del_enemigo = (
+                diferencia_vertical <= 18
+            )
+
+
+            if (
+                esta_cayendo
+                and viene_desde_arriba
+                and esta_cerca_del_enemigo
+            ):
+
+                enemigo.aplastar()
+
+                jugador.rect.bottom = (
+                    enemigo.rect.top
+                )
+
+                jugador.vel_y = (
+                    SALTO_FUERZA * 0.55
+                )
+
+                jugador.en_suelo = False
+
+                break
+
+
+            if colision_por_pixeles(
                 jugador,
                 enemigo
-            )
+            ):
+
+                murio = True
+
+                break
+
+
+        # ==================================================
+        # ELIMINAR ENEMIGOS APLASTADOS
+        # ==================================================
+
+        enemigos = [
+            enemigo
             for enemigo in enemigos
-        ):
+            if not (
+                enemigo.aplastado
+                and enemigo.tiempo_aplastado <= 0
+            )
+        ]
+
+
+        # ==================================================
+        # MUERTE
+        # ==================================================
+
+        if murio:
+
+            vidas -= 1
+
+
+            # ----------------------------------------------
+            # CÁMARA ACTUAL
+            # ----------------------------------------------
+
+            camara_x = max(
+                0,
+                min(
+                    jugador.rect.centerx
+                    - ANCHO // 2,
+
+                    NIVEL_ANCHO
+                    - ANCHO
+                )
+            )
+
+
+            # ----------------------------------------------
+            # ANIMACIÓN DE MUERTE
+            # ----------------------------------------------
+
+            animacion_muerte(
+                pantalla,
+                reloj,
+                jugador,
+                sprites,
+                camara_x
+            )
+
+
+            # ----------------------------------------------
+            # SI NO QUEDAN VIDAS
+            # ----------------------------------------------
+
+            if vidas <= 0:
+
+                return "menu"
+
+
+            # ----------------------------------------------
+            # PANTALLA NEGRA
+            # ----------------------------------------------
+
+            pantalla_vidas(
+                pantalla,
+                reloj,
+                sprites,
+                vidas,
+                fuente_media
+            )
+
+
+            # ----------------------------------------------
+            # REINICIAR JUGADOR
+            # ----------------------------------------------
 
             jugador = Jugador(
                 sprites
             )
+
+
+            # ----------------------------------------------
+            # REINICIAR TODOS LOS GAGAMBAS
+            # ----------------------------------------------
+
+            enemigos = crear_enemigos(
+                sprites["enemigo"]
+            )
+
+            continue
 
 
         # ==================================================
@@ -858,6 +1255,25 @@ def jugar(
         pantalla.blit(
             info,
             (10, 10)
+        )
+
+
+        # ==================================================
+        # VIDAS
+        # ==================================================
+
+        texto_vidas = fuente_media.render(
+            "VIDAS: " + str(vidas),
+            True,
+            NEGRO
+        )
+
+        pantalla.blit(
+            texto_vidas,
+            (
+                ANCHO - texto_vidas.get_width() - 10,
+                10
+            )
         )
 
 
