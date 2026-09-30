@@ -5,6 +5,7 @@ import os
 from juego import jugar
 from instrucciones import pantalla_instrucciones
 from eleccionPersonajes import seleccionar_personaje
+from intro import pantallas_intro
 
 
 # ==========================================================
@@ -413,6 +414,11 @@ LOGO = pygame.transform.scale(
 )
 
 
+# El png del logo tiene espacio transparente a la izquierda;
+# se lo descuenta para que el dibujo quede pegado al margen.
+LOGO_MARGEN_TRANSPARENTE = LOGO.get_bounding_rect().left
+
+
 # ==========================================================
 # BOTÓN PLAY
 # ==========================================================
@@ -478,25 +484,116 @@ def dibujar_boton(
 # MENÚ PRINCIPAL
 # ==========================================================
 
-def menu():
+MARGEN_IZQ = 60
+
+ALTO_HOTBAR = 80
+
+GRIS_HOTBAR = (90, 90, 90)
+GRIS_HOTBAR_OSCURO = (55, 55, 55)
+GRIS_SLOT = (130, 130, 130)
+
+
+def dibujar_hotbar(superficie, sprites_elegidos):
+    """Bloque gris inferior con un slot por personaje (estilo hotbar)."""
+
+    y_barra = ALTO - ALTO_HOTBAR
+
+    # Bloque gris con borde superior
+    pygame.draw.rect(
+        superficie,
+        GRIS_HOTBAR,
+        (0, y_barra, ANCHO, ALTO_HOTBAR)
+    )
+
+    pygame.draw.line(
+        superficie,
+        GRIS_HOTBAR_OSCURO,
+        (0, y_barra),
+        (ANCHO, y_barra),
+        4
+    )
+
+    # Slots
+    tam_slot = 64
+    separacion = 8
+    y_slot = y_barra + (ALTO_HOTBAR - tam_slot) // 2
+
+    for i, personaje in enumerate(personajes):
+
+        x_slot = MARGEN_IZQ + i * (tam_slot + separacion)
+
+        rect_slot = pygame.Rect(x_slot, y_slot, tam_slot, tam_slot)
+
+        es_elegido = personaje["sprites"] is sprites_elegidos
+
+        pygame.draw.rect(superficie, GRIS_SLOT, rect_slot)
+
+        pygame.draw.rect(
+            superficie,
+            BLANCO if es_elegido else GRIS_HOTBAR_OSCURO,
+            rect_slot,
+            4 if es_elegido else 3
+        )
+
+        # Sprite del personaje (se achica si no entra en el slot)
+        sprite = personaje["preview"]
+
+        maximo = tam_slot - 12
+
+        if sprite.get_width() > maximo or sprite.get_height() > maximo:
+
+            factor = min(
+                maximo / sprite.get_width(),
+                maximo / sprite.get_height()
+            )
+
+            sprite = pygame.transform.scale(
+                sprite,
+                (
+                    int(sprite.get_width() * factor),
+                    int(sprite.get_height() * factor)
+                )
+            )
+
+        superficie.blit(
+            sprite,
+            sprite.get_rect(center=rect_slot.center)
+        )
+
+    # Pista a la derecha de la barra
+    pista = pygame.font.SysFont("Arial", 20).render(
+        "C: cambiar personaje",
+        True,
+        BLANCO
+    )
+
+    superficie.blit(
+        pista,
+        pista.get_rect(
+            midright=(ANCHO - MARGEN_IZQ, y_barra + ALTO_HOTBAR // 2)
+        )
+    )
+
+
+def menu(sprites_elegidos=None):
 
     boton_play = pygame.Rect(
-        ANCHO // 2 - 100,
-        260,
+        MARGEN_IZQ,
+        250,
         200,
         65
     )
 
     boton_instrucciones = pygame.Rect(
-        ANCHO // 2 - 100,
-        345,
+        MARGEN_IZQ,
+        325,
         200,
         65
     )
 
     boton_exit = pygame.Rect(
-        ANCHO // 2 - 100,
-        430,
+        MARGEN_IZQ,
+        400,
         200,
         65
     )
@@ -514,9 +611,9 @@ def menu():
         pantalla.blit(
             LOGO,
             LOGO.get_rect(
-                center=(
-                    ANCHO // 2,
-                    140
+                midleft=(
+                    MARGEN_IZQ - LOGO_MARGEN_TRANSPARENTE,
+                    125
                 )
             )
         )
@@ -585,6 +682,12 @@ def menu():
         )
 
         # --------------------------------------------------
+        # HOTBAR
+        # --------------------------------------------------
+
+        dibujar_hotbar(pantalla, sprites_elegidos)
+
+        # --------------------------------------------------
         # EVENTOS
         # --------------------------------------------------
 
@@ -629,6 +732,10 @@ def menu():
 
                     return "jugar"
 
+                if evento.key == pygame.K_c:
+
+                    return "personajes"
+
         pygame.display.flip()
 
         reloj.tick(FPS)
@@ -640,25 +747,37 @@ def menu():
 
 def main():
 
-    estado = "menu"
+    estado = "intro"
+
+    sprites_elegidos = None
 
     while True:
 
         # --------------------------------------------------
-        # MENÚ
+        # INTRO: DOS PANTALLAS NEGRAS QUE SE ACLARAN
         # --------------------------------------------------
 
-        if estado == "menu":
+        if estado == "intro":
 
-            estado = menu()
+            pantallas_intro(
+                pantalla,
+                reloj,
+                ANCHO,
+                ALTO,
+                LOGO,
+                fuente_grande,
+                fuente_media
+            )
+
+            estado = "personajes"
 
         # --------------------------------------------------
-        # SELECCIÓN DE PERSONAJE
+        # SELECCIÓN DE PERSONAJE (ANTES DEL MENÚ)
         # --------------------------------------------------
 
-        elif estado == "jugar":
+        elif estado == "personajes":
 
-            sprites_elegidos = seleccionar_personaje(
+            elegido = seleccionar_personaje(
                 pantalla,
                 reloj,
                 ANCHO,
@@ -668,19 +787,42 @@ def main():
                 fuente_media
             )
 
-            if sprites_elegidos is None:
+            if elegido is None:
 
-                estado = "menu"
+                # ESC en la selección: si ya había un personaje
+                # elegido se vuelve al menú, si no se sale del juego
+                if sprites_elegidos is None:
+
+                    pygame.quit()
+                    sys.exit()
 
             else:
 
-                estado = jugar(
-                    pantalla,
-                    reloj,
-                    sprites_elegidos,
-                    fuente_grande,
-                    fuente_media
-                )
+                sprites_elegidos = elegido
+
+            estado = "menu"
+
+        # --------------------------------------------------
+        # MENÚ
+        # --------------------------------------------------
+
+        elif estado == "menu":
+
+            estado = menu(sprites_elegidos)
+
+        # --------------------------------------------------
+        # JUGAR CON EL PERSONAJE ELEGIDO
+        # --------------------------------------------------
+
+        elif estado == "jugar":
+
+            estado = jugar(
+                pantalla,
+                reloj,
+                sprites_elegidos,
+                fuente_grande,
+                fuente_media
+            )
 
         # --------------------------------------------------
         # INSTRUCCIONES
