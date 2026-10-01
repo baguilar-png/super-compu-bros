@@ -1,11 +1,14 @@
 import pygame
 import sys
 import os
+import math
 
 from juego import jugar
 from instrucciones import pantalla_instrucciones
 from eleccionPersonajes import seleccionar_personaje
 from intro import pantallas_intro
+from pixel_font import FuentePixel
+from archivos import cargar_personaje, guardar_personaje
 
 
 # ==========================================================
@@ -50,16 +53,10 @@ reloj = pygame.time.Clock()
 
 FPS = 60
 
-fuente_grande = pygame.font.SysFont(
-    "Arial",
-    60,
-    bold=True
-)
-
-fuente_media = pygame.font.SysFont(
-    "Arial",
-    36
-)
+# Fuentes pixel art (la cifra es el tamano de cada pixel de la letra)
+fuente_grande = FuentePixel(6)
+fuente_media = FuentePixel(3)
+fuente_chica = FuentePixel(2)
 
 
 # ==========================================================
@@ -93,6 +90,25 @@ def cargar_sprite(ruta):
         (
             original.get_width() * ESCALA_SPRITE,
             original.get_height() * ESCALA_SPRITE
+        )
+    )
+
+
+# Cabeza para la hotbar (imagen solo de la cabeza, escala 3)
+ESCALA_CABEZA = 3
+
+
+def cargar_cabeza(ruta):
+
+    original = pygame.image.load(
+        os.path.join(CARPETA, ruta)
+    ).convert_alpha()
+
+    return pygame.transform.scale(
+        original,
+        (
+            original.get_width() * ESCALA_CABEZA,
+            original.get_height() * ESCALA_CABEZA
         )
     )
 
@@ -261,15 +277,13 @@ sprites_bauto = crear_sprites_personaje(
     "bauto frame 3.png"
 )
 
-_play_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/play.png")).convert_alpha()
-PLAY_BUTTON = pygame.transform.scale(_play_original, (200, 65))
-_instrucciones_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/instrucciones.png")).convert_alpha()
-INSTRUCCIONES_BUTTON = pygame.transform.scale(_instrucciones_original, (200, 65))
 _exit_original = pygame.image.load(os.path.join(CARPETA, "assets/fondos/exit.png")).convert_alpha()
 EXIT_BUTTON = pygame.transform.scale(_exit_original, (150, 150))
 personajes.append({
     "nombre": "BAUTO",
     "preview": sprites_bauto["idle_der"],
+    "seleccion": cargar_sprite("assets/personajes/BAUTO/bauto frente.png"),
+    "cabeza": cargar_cabeza("assets/personajes/BAUTO/bauto cabeza.png"),
     "sprites": sprites_bauto
 })
 
@@ -293,6 +307,8 @@ sprites_benja = crear_sprites_personaje(
 personajes.append({
     "nombre": "BENJA",
     "preview": sprites_benja["idle_der"],
+    "seleccion": cargar_sprite("assets/personajes/BENJA/benja frente.png"),
+    "cabeza": cargar_cabeza("assets/personajes/BENJA/benja cabeza.png"),
     "sprites": sprites_benja
 })
 
@@ -316,6 +332,8 @@ sprites_castro = crear_sprites_personaje(
 personajes.append({
     "nombre": "CASTRO",
     "preview": sprites_castro["idle_der"],
+    "seleccion": cargar_sprite("assets/personajes/CASTRO/castro frente.png"),
+    "cabeza": cargar_cabeza("assets/personajes/CASTRO/castro cabeza.png"),
     "sprites": sprites_castro
 })
 
@@ -339,6 +357,8 @@ sprites_posho = crear_sprites_personaje(
 personajes.append({
     "nombre": "POSHO",
     "preview": sprites_posho["idle_der"],
+    "seleccion": cargar_sprite("assets/personajes/POSHO/posho frente.png"),
+    "cabeza": cargar_cabeza("assets/personajes/POSHO/Posho cabeza.png"),
     "sprites": sprites_posho
 })
 
@@ -362,6 +382,8 @@ sprites_thiago = crear_sprites_personaje(
 personajes.append({
     "nombre": "THIAGO",
     "preview": sprites_thiago["idle_der"],
+    "seleccion": cargar_sprite("assets/personajes/THIAGO/thiago frente.png"),
+    "cabeza": cargar_cabeza("assets/personajes/THIAGO/thiago cabeza.png"),
     "sprites": sprites_thiago
 })
 
@@ -420,22 +442,150 @@ LOGO_MARGEN_TRANSPARENTE = LOGO.get_bounding_rect().left
 
 
 # ==========================================================
-# BOTÓN PLAY
+# BOTONES PIXEL ART (PLAY e INSTRUCCIONES)
+#
+# Los png tienen mucho espacio transparente alrededor, así que se
+# recortan al borde real del botón y se escalan por un entero
+# (para que los píxeles queden nítidos).
+#
+# Hover: las letras y el borde se ponen blancos.
+# Click: sigue en blanco y "respira" 2 veces; recién después
+#        se ejecuta la acción del botón.
 # ==========================================================
 
-_play_original = pygame.image.load(
-    os.path.join(
-        CARPETA,
-        "assets",
-        "fondos",
-        "play.png"
-    )
-).convert_alpha()
+# Los tres botones (PLAY, INSTRUCCIONES y EXIT) tienen la misma altura.
+# Se toma la que ya tenía INSTRUCCIONES (9 px de dibujo x 5).
+ALTO_BOTON = 45
 
-PLAY_BUTTON = pygame.transform.scale(
-    _play_original,
-    (200, 65)
-)
+# Animación al apretar: "respira" 2 veces
+RESPIROS = 2
+DURACION_RESPIRO_MS = 180
+AGRANDE = 0.12
+
+# Duración total de la animación
+DURACION_ANIMACION_MS = RESPIROS * DURACION_RESPIRO_MS
+
+
+def recortar(superficie):
+    """Recorta el espacio transparente que rodea al dibujo."""
+
+    return superficie.subsurface(
+        superficie.get_bounding_rect()
+    ).copy()
+
+
+def hacer_blanco(superficie):
+    """
+    Devuelve una copia con las letras y el borde (gris oscuro)
+    en blanco. El cuerpo gris del botón se mantiene.
+    """
+
+    copia = superficie.copy()
+
+    for x in range(copia.get_width()):
+
+        for y in range(copia.get_height()):
+
+            r, g, b, a = copia.get_at((x, y))
+
+            if a > 0 and r <= 120:
+
+                copia.set_at((x, y), (255, 255, 255, a))
+
+    return copia
+
+
+def hacer_todo_blanco(superficie):
+    """Devuelve una copia con TODO el botón en blanco (silueta)."""
+
+    copia = superficie.copy()
+
+    for x in range(copia.get_width()):
+
+        for y in range(copia.get_height()):
+
+            a = copia.get_at((x, y)).a
+
+            if a > 0:
+
+                copia.set_at((x, y), (255, 255, 255, a))
+
+    return copia
+
+
+class BotonPixel:
+
+    def __init__(self, archivo, alto, x_izq, y_centro):
+
+        original = recortar(
+            pygame.image.load(
+                os.path.join(
+                    CARPETA,
+                    "assets",
+                    "fondos",
+                    archivo
+                )
+            ).convert_alpha()
+        )
+
+        # Se escala para que todos los botones midan lo mismo de alto
+        escala = alto / original.get_height()
+
+        self.tamano = (
+            round(original.get_width() * escala),
+            alto
+        )
+
+        self.normal = pygame.transform.scale(
+            original,
+            self.tamano
+        )
+
+        self.blanco = pygame.transform.scale(
+            hacer_blanco(original),
+            self.tamano
+        )
+
+        # Mientras respira, el botón entero se vuelve blanco
+        self.todo_blanco = pygame.transform.scale(
+            hacer_todo_blanco(original),
+            self.tamano
+        )
+
+        # Alineado a la izquierda con el resto del menú
+        self.rect = pygame.Rect(0, 0, *self.tamano)
+
+        self.rect.midleft = (x_izq, y_centro)
+
+    def dibujar(self, superficie, hover, t_click):
+        """
+        hover   -> True si el mouse está encima (se pone blanco)
+        t_click -> ms desde que se apretó, o None si no se apretó
+        """
+
+        if t_click is None:
+
+            imagen = self.blanco if hover else self.normal
+
+        else:
+
+            # Apretado: todo blanco y respirando (agranda y achica)
+            fase = (t_click / DURACION_RESPIRO_MS) % 1.0
+
+            escala = 1 + AGRANDE * math.sin(math.pi * fase)
+
+            imagen = pygame.transform.scale(
+                self.todo_blanco,
+                (
+                    int(self.tamano[0] * escala),
+                    int(self.tamano[1] * escala)
+                )
+            )
+
+        superficie.blit(
+            imagen,
+            imagen.get_rect(center=self.rect.center)
+        )
 
 
 # ==========================================================
@@ -492,26 +642,84 @@ GRIS_HOTBAR = (90, 90, 90)
 GRIS_HOTBAR_OSCURO = (55, 55, 55)
 GRIS_SLOT = (130, 130, 130)
 
+_cubo_original = recortar(
+    pygame.image.load(
+        os.path.join(
+            CARPETA,
+            "assets",
+            "fondos",
+            "cubo.png"
+        )
+    ).convert_alpha()
+)
+
+ESCALA_CUBO = 3
+
+CUBO = pygame.transform.scale(
+    _cubo_original,
+    (
+        _cubo_original.get_width() * ESCALA_CUBO,
+        _cubo_original.get_height() * ESCALA_CUBO
+    )
+)
+
+
+# Fondo de la seleccion de personajes (la imagen es 16:9, la ventana
+# 4:3: se ajusta a la altura y se recorta el centro)
+_fondo_original = pygame.image.load(
+    os.path.join(
+        CARPETA,
+        "assets",
+        "fondos",
+        "fondo_seleccion.png"
+    )
+).convert()
+
+_factor_fondo = ALTO / _fondo_original.get_height()
+
+_fondo_escalado = pygame.transform.smoothscale(
+    _fondo_original,
+    (
+        round(_fondo_original.get_width() * _factor_fondo),
+        ALTO
+    )
+)
+
+FONDO_SELECCION = _fondo_escalado.subsurface(
+    (
+        (_fondo_escalado.get_width() - ANCHO) // 2,
+        0,
+        ANCHO,
+        ALTO
+    )
+).copy()
+
+
+# Hot bar nueva (hot_bar.png): se recorta la parte transparente de
+# arriba y se estira al ancho de la ventana sin suavizar (pixel art)
+_hotbar_original = recortar(
+    pygame.image.load(
+        os.path.join(
+            CARPETA,
+            "assets",
+            "fondos",
+            "hot_bar.png"
+        )
+    ).convert_alpha()
+)
+
+HOTBAR_IMAGEN = pygame.transform.scale(
+    _hotbar_original,
+    (ANCHO, ALTO_HOTBAR)
+)
+
 
 def dibujar_hotbar(superficie, sprites_elegidos):
-    """Bloque gris inferior con un slot por personaje (estilo hotbar)."""
+    """Barra inferior (imagen) con un slot por personaje (estilo hotbar)."""
 
     y_barra = ALTO - ALTO_HOTBAR
 
-    # Bloque gris con borde superior
-    pygame.draw.rect(
-        superficie,
-        GRIS_HOTBAR,
-        (0, y_barra, ANCHO, ALTO_HOTBAR)
-    )
-
-    pygame.draw.line(
-        superficie,
-        GRIS_HOTBAR_OSCURO,
-        (0, y_barra),
-        (ANCHO, y_barra),
-        4
-    )
+    superficie.blit(HOTBAR_IMAGEN, (0, y_barra))
 
     # Slots
     tam_slot = 64
@@ -526,17 +734,23 @@ def dibujar_hotbar(superficie, sprites_elegidos):
 
         es_elegido = personaje["sprites"] is sprites_elegidos
 
-        pygame.draw.rect(superficie, GRIS_SLOT, rect_slot)
+        # El cubo reemplaza al cuadrado gris
+        rect_cubo = CUBO.get_rect(center=rect_slot.center)
 
-        pygame.draw.rect(
-            superficie,
-            BLANCO if es_elegido else GRIS_HOTBAR_OSCURO,
-            rect_slot,
-            4 if es_elegido else 3
-        )
+        superficie.blit(CUBO, rect_cubo)
+
+        # El personaje elegido se marca con un borde blanco
+        if es_elegido:
+
+            pygame.draw.rect(
+                superficie,
+                BLANCO,
+                rect_cubo.inflate(6, 6),
+                3
+            )
 
         # Sprite del personaje (se achica si no entra en el slot)
-        sprite = personaje["preview"]
+        sprite = personaje.get("cabeza", personaje["preview"])
 
         maximo = tam_slot - 12
 
@@ -561,7 +775,7 @@ def dibujar_hotbar(superficie, sprites_elegidos):
         )
 
     # Pista a la derecha de la barra
-    pista = pygame.font.SysFont("Arial", 20).render(
+    pista = fuente_chica.render(
         "C: cambiar personaje",
         True,
         BLANCO
@@ -575,28 +789,34 @@ def dibujar_hotbar(superficie, sprites_elegidos):
     )
 
 
+BOTON_PLAY = BotonPixel(
+    "boton_jugar.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    295
+)
+
+BOTON_INSTRUCCIONES = BotonPixel(
+    "boton_instrucciones.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    365
+)
+
+BOTON_EXIT = BotonPixel(
+    "boton_salir.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    435
+)
+
+
 def menu(sprites_elegidos=None):
 
-    boton_play = pygame.Rect(
-        MARGEN_IZQ,
-        250,
-        200,
-        65
-    )
-
-    boton_instrucciones = pygame.Rect(
-        MARGEN_IZQ,
-        325,
-        200,
-        65
-    )
-
-    boton_exit = pygame.Rect(
-        MARGEN_IZQ,
-        400,
-        200,
-        65
-    )
+    # Botón que se apretó ("jugar" / "instrucciones") y en qué
+    # momento (ms); None = todavía no se apretó ninguno
+    accion_click = None
+    inicio_click = None
 
     while True:
 
@@ -623,63 +843,42 @@ def menu(sprites_elegidos=None):
         # --------------------------------------------------
 
         mouse_pos = pygame.mouse.get_pos()
-        color_instrucciones = VERDE if boton_instrucciones.collidepoint(mouse_pos) else GRIS
-        color_exit = ROJO if boton_exit.collidepoint(mouse_pos) else GRIS
-        pantalla.blit(PLAY_BUTTON, PLAY_BUTTON.get_rect(center=boton_play.center))
-        pantalla.blit(INSTRUCCIONES_BUTTON, INSTRUCCIONES_BUTTON.get_rect(center=boton_instrucciones.center))
-        pantalla.blit(EXIT_BUTTON, EXIT_BUTTON.get_rect(center=boton_exit.center))
 
-        color_instrucciones = (
-            VERDE
-            if boton_instrucciones.collidepoint(mouse_pos)
-            else GRIS
+        # --------------------------------------------------
+        # BOTONES PLAY E INSTRUCCIONES
+        # --------------------------------------------------
+
+        t_click = (
+            None
+            if inicio_click is None
+            else pygame.time.get_ticks() - inicio_click
         )
 
-        color_exit = (
-            ROJO
-            if boton_exit.collidepoint(mouse_pos)
-            else GRIS
-        )
+        # Mientras respira uno, el otro no reacciona al mouse
+        libre = accion_click is None
 
-        # --------------------------------------------------
-        # BOTÓN PLAY
-        # --------------------------------------------------
-
-        pantalla.blit(
-            PLAY_BUTTON,
-            PLAY_BUTTON.get_rect(
-                center=boton_play.center
-            )
-        )
-
-        # --------------------------------------------------
-        # BOTÓN INSTRUCCIONES
-        # --------------------------------------------------
-
-        dibujar_boton(
+        BOTON_PLAY.dibujar(
             pantalla,
-            "INSTRUCCIONES",
-            boton_instrucciones,
-            color_instrucciones,
-            BLANCO,
-            pygame.font.SysFont(
-                "Arial",
-                22
-            )
+            libre and BOTON_PLAY.rect.collidepoint(mouse_pos),
+            t_click if accion_click == "jugar" else None
         )
 
-        # --------------------------------------------------
-        # BOTÓN EXIT
-        # --------------------------------------------------
-
-        dibujar_boton(
+        BOTON_INSTRUCCIONES.dibujar(
             pantalla,
-            "EXIT",
-            boton_exit,
-            color_exit,
-            BLANCO,
-            fuente_media
+            libre and BOTON_INSTRUCCIONES.rect.collidepoint(mouse_pos),
+            t_click if accion_click == "instrucciones" else None
         )
+
+        BOTON_EXIT.dibujar(
+            pantalla,
+            libre and BOTON_EXIT.rect.collidepoint(mouse_pos),
+            t_click if accion_click == "salir" else None
+        )
+
+        # Terminaron los 2 respiros -> recién ahí se ejecuta la acción
+        if t_click is not None and t_click >= DURACION_ANIMACION_MS:
+
+            return accion_click
 
         # --------------------------------------------------
         # HOTBAR
@@ -704,18 +903,30 @@ def menu(sprites_elegidos=None):
 
             if evento.type == pygame.MOUSEBUTTONDOWN:
 
-                if boton_play.collidepoint(evento.pos):
+                if accion_click is not None:
 
-                    return "jugar"
+                    continue
 
-                if boton_instrucciones.collidepoint(evento.pos):
+                if BOTON_PLAY.rect.collidepoint(evento.pos):
 
-                    return "instrucciones"
+                    accion_click = "jugar"
+                    inicio_click = pygame.time.get_ticks()
 
-                if boton_exit.collidepoint(evento.pos):
+                    continue
 
-                    pygame.quit()
-                    sys.exit()
+                if BOTON_INSTRUCCIONES.rect.collidepoint(evento.pos):
+
+                    accion_click = "instrucciones"
+                    inicio_click = pygame.time.get_ticks()
+
+                    continue
+
+                if BOTON_EXIT.rect.collidepoint(evento.pos):
+
+                    accion_click = "salir"
+                    inicio_click = pygame.time.get_ticks()
+
+                    continue
 
             # ----------------------------------------------
             # TECLADO
@@ -728,9 +939,16 @@ def menu(sprites_elegidos=None):
                     pygame.quit()
                     sys.exit()
 
+                if accion_click is not None:
+
+                    continue
+
                 if evento.key == pygame.K_RETURN:
 
-                    return "jugar"
+                    accion_click = "jugar"
+                    inicio_click = pygame.time.get_ticks()
+
+                    continue
 
                 if evento.key == pygame.K_c:
 
@@ -769,7 +987,16 @@ def main():
                 fuente_media
             )
 
-            estado = "personajes"
+            # Si hay un personaje guardado (personajes.txt) se va
+            # directo al menu, si no se elige
+            guardado = cargar_personaje()
+
+            for personaje in personajes:
+
+                if personaje["nombre"] == guardado:
+                    sprites_elegidos = personaje["sprites"]
+
+            estado = "menu" if sprites_elegidos is not None else "personajes"
 
         # --------------------------------------------------
         # SELECCIÓN DE PERSONAJE (ANTES DEL MENÚ)
@@ -784,7 +1011,8 @@ def main():
                 ALTO,
                 personajes,
                 fuente_grande,
-                fuente_media
+                fuente_media,
+                FONDO_SELECCION
             )
 
             if elegido is None:
@@ -800,6 +1028,12 @@ def main():
 
                 sprites_elegidos = elegido
 
+                # Se guarda el personaje elegido en personajes.txt
+                for personaje in personajes:
+
+                    if personaje["sprites"] is elegido:
+                        guardar_personaje(personaje["nombre"])
+
             estado = "menu"
 
         # --------------------------------------------------
@@ -810,19 +1044,38 @@ def main():
 
             estado = menu(sprites_elegidos)
 
+            if estado == "salir":
+
+                pygame.quit()
+                sys.exit()
+
         # --------------------------------------------------
         # JUGAR CON EL PERSONAJE ELEGIDO
         # --------------------------------------------------
 
         elif estado == "jugar":
 
+            # Cara del personaje en uso (para el HUD de vidas)
+            cabeza_elegida = None
+
+            for personaje in personajes:
+
+                if personaje["sprites"] is sprites_elegidos:
+                    cabeza_elegida = personaje.get("cabeza")
+
             estado = jugar(
                 pantalla,
                 reloj,
                 sprites_elegidos,
                 fuente_grande,
-                fuente_media
+                fuente_media,
+                cabeza_elegida
             )
+
+            # Perdio todas las vidas: hay que elegir personaje de nuevo
+            if estado == "personajes":
+
+                sprites_elegidos = None
 
         # --------------------------------------------------
         # INSTRUCCIONES

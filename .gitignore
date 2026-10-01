@@ -1,2 +1,5 @@
 venv/
 *.pyc
+puntos.txt
+personajes.txt
+bebidas.txt
