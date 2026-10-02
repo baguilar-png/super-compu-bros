@@ -4,11 +4,18 @@ import os
 import math
 
 from juego import jugar
+from mapa import pantalla_mapa
 from instrucciones import pantalla_instrucciones
 from eleccionPersonajes import seleccionar_personaje
 from intro import pantallas_intro
 from pixel_font import FuentePixel
-from archivos import cargar_personaje, guardar_personaje
+from fondo_menu import FondoMenuAnimado
+import transicion
+from archivos import (
+    cargar_personaje,
+    guardar_personaje,
+    cargar_mapa
+)
 
 
 # ==========================================================
@@ -29,7 +36,7 @@ pantalla = pygame.display.set_mode(
 )
 
 pygame.display.set_caption(
-    "Super Compu Bros MVP"
+    "Super Compu Bros Alpha 1.000.0"
 )
 
 
@@ -695,6 +702,10 @@ FONDO_SELECCION = _fondo_escalado.subsurface(
 ).copy()
 
 
+# Fondo animado del menu (Obelisco con nubes y autos en movimiento)
+FONDO_MENU = FondoMenuAnimado(CARPETA, ANCHO, ALTO)
+
+
 # Hot bar nueva (hot_bar.png): se recorta la parte transparente de
 # arriba y se estira al ancho de la ventana sin suavizar (pixel art)
 _hotbar_original = recortar(
@@ -820,9 +831,7 @@ def menu(sprites_elegidos=None):
 
     while True:
 
-        pantalla.fill(
-            CELESTE
-        )
+        FONDO_MENU.dibujar(pantalla)
 
         # --------------------------------------------------
         # LOGO
@@ -969,7 +978,29 @@ def main():
 
     sprites_elegidos = None
 
+    # Pantalla que se mostró en la vuelta anterior (para la transición)
+    estado_mostrado = None
+
     while True:
+
+        # --------------------------------------------------
+        # TRANSICIÓN DE CÍRCULO ENTRE PANTALLAS
+        #
+        # Primero se CIERRA el círculo sobre la pantalla en la que
+        # estabas (sigue viéndose el menú / nivel / mapa de antes) y
+        # después se ABRE sobre la pantalla nueva.
+        # Desde la intro solo se abre (la intro termina en negro).
+        # --------------------------------------------------
+
+        if estado_mostrado is not None:
+
+            if estado_mostrado != "intro":
+
+                transicion.cerrar_circulo(pantalla, reloj)
+
+            transicion.abrir_circulo()
+
+        estado_mostrado = estado
 
         # --------------------------------------------------
         # INTRO: DOS PANTALLAS NEGRAS QUE SE ACLARAN
@@ -1046,8 +1077,33 @@ def main():
 
             if estado == "salir":
 
+                # El círculo se cierra y recién ahí se cierra el juego
+                transicion.cerrar_circulo(pantalla, reloj)
+
                 pygame.quit()
                 sys.exit()
+
+            # La primera vez (ningun nivel completado) PLAY entra directo
+            # al nivel 1; el mapa de Buenos Aires aparece recien despues
+            # de pasar el primer nivel
+            if estado == "jugar" and cargar_mapa()[0] > 0:
+
+                estado = "mapa"
+
+        # --------------------------------------------------
+        # MAPA DE BUENOS AIRES (15 NIVELES, LA BOCA -> LA BOCA)
+        # --------------------------------------------------
+
+        elif estado in ("mapa", "mapa_victoria"):
+
+            # "mapa_victoria": se viene de terminar un nivel, el punto
+            # se vuelve negro y salen los puntitos al siguiente
+            estado = pantalla_mapa(
+                pantalla,
+                reloj,
+                sprites_elegidos,
+                animar_completado=(estado == "mapa_victoria")
+            )
 
         # --------------------------------------------------
         # JUGAR CON EL PERSONAJE ELEGIDO
@@ -1063,13 +1119,17 @@ def main():
                 if personaje["sprites"] is sprites_elegidos:
                     cabeza_elegida = personaje.get("cabeza")
 
+            # Nivel que toca jugar (los completados + 1)
+            nivel_actual = cargar_mapa()[0] + 1
+
             estado = jugar(
                 pantalla,
                 reloj,
                 sprites_elegidos,
                 fuente_grande,
                 fuente_media,
-                cabeza_elegida
+                cabeza_elegida,
+                nivel_actual
             )
 
             # Perdio todas las vidas: hay que elegir personaje de nuevo

@@ -4,12 +4,17 @@ import sys
 
 import pygame
 
+import transicion
+
+from pixel_font import FuentePixel
+
 from archivos import (
     cargar_puntos,
     guardar_puntos,
     cargar_bebidas,
     guardar_bebida,
-    reiniciar_progreso
+    reiniciar_progreso,
+    completar_nivel
 )
 
 
@@ -615,12 +620,13 @@ class TextoFlotante:
 
 class Item:
 
-    def __init__(self, tipo, x, altura, sprite):
+    def __init__(self, tipo, x, altura, sprite, nivel=1):
 
         self.tipo = tipo
 
-        # Id unico (se guarda en bebidas.txt al recogerlo)
-        self.id = tipo + "_" + str(x)
+        # Id unico (se guarda en bebidas.txt al recogerlo). Lleva el
+        # numero de nivel: cada nivel del mapa tiene sus propias bebidas.
+        self.id = "n" + str(nivel) + "_" + tipo + "_" + str(x)
 
         self.sprite = sprite
 
@@ -746,7 +752,7 @@ def cargar_sprites_items():
     return _sprites_items
 
 
-def crear_items():
+def crear_items(nivel=1):
 
     sprites = cargar_sprites_items()
 
@@ -755,9 +761,9 @@ def crear_items():
     recogidas = cargar_bebidas()
 
     return [
-        Item(tipo, x, altura, sprites[tipo])
+        Item(tipo, x, altura, sprites[tipo], nivel)
         for tipo, x, altura in POSICIONES_ITEMS
-        if (tipo + "_" + str(x)) not in recogidas
+        if ("n" + str(nivel) + "_" + tipo + "_" + str(x)) not in recogidas
     ]
 
 
@@ -1137,57 +1143,132 @@ def pantalla_vidas(
 
 
 # ==========================================================
-# PANTALLA DE VICTORIA
+# GAME OVER: "HAS MUERTO" SOBRE EL CEMENTERIO DE CHACARITA
+#
+# Aparece de golpe (sin fundido de entrada), se queda un momento
+# y se va desvaneciendo hasta quedar en negro.
 # ==========================================================
 
-def pantalla_victoria(
-    pantalla,
-    reloj,
-    fuente_grande,
-    fuente_media
-):
+ROJO_MUERTE = (225, 15, 15)
 
-    texto = fuente_grande.render(
-        "GANASTE!",
-        True,
-        BLANCO
+GAME_OVER_APARECE_SEG = 1.8     # cuanto se ve entera, de golpe
+GAME_OVER_DESVANECE_SEG = 2.6   # cuanto tarda en irse a negro
+
+
+def _texto_con_borde(fuente, texto, color, color_borde, grosor):
+    """Texto pixel art con un borde de 'grosor' pixeles alrededor."""
+
+    interior = fuente.render(texto, True, color)
+    borde = fuente.render(texto, True, color_borde)
+
+    w, h = interior.get_size()
+
+    imagen = pygame.Surface(
+        (w + grosor * 2, h + grosor * 2),
+        pygame.SRCALPHA
     )
 
-    sub = fuente_media.render(
-        "Presiona ENTER para volver al menu",
-        True,
-        BLANCO
+    for dx in range(-grosor, grosor + 1):
+
+        for dy in range(-grosor, grosor + 1):
+
+            imagen.blit(borde, (grosor + dx, grosor + dy))
+
+    imagen.blit(interior, (grosor, grosor))
+
+    return imagen
+
+
+def _crear_escena_game_over(ancho, alto, fuente_media):
+
+    # Fondo: la foto es 16:9 y la ventana 4:3, se ajusta a la altura
+    # y se recorta el centro
+    foto = pygame.image.load(
+        os.path.join(
+            CARPETA,
+            "assets",
+            "fondos",
+            "game_over_chacarita.png"
+        )
+    ).convert()
+
+    factor = alto / foto.get_height()
+
+    foto = pygame.transform.smoothscale(
+        foto,
+        (round(foto.get_width() * factor), alto)
     )
 
+    escena = pygame.Surface((ancho, alto))
 
-    while True:
+    escena.blit(
+        foto,
+        ((ancho - foto.get_width()) // 2, 0)
+    )
 
-        pantalla.fill(
-            VERDE
-        )
+    # Textos
+    fuente_titulo = FuentePixel(11)
+
+    titulo = _texto_con_borde(
+        fuente_titulo,
+        "HAS MUERTO",
+        ROJO_MUERTE,
+        NEGRO,
+        5
+    )
+
+    escena.blit(
+        titulo,
+        titulo.get_rect(center=(ancho // 2, alto // 2 - 40))
+    )
+
+    subtitulo = _texto_con_borde(
+        fuente_media,
+        "Ahora sos parte de Chacarita",
+        BLANCO,
+        NEGRO,
+        3
+    )
+
+    escena.blit(
+        subtitulo,
+        subtitulo.get_rect(center=(ancho // 2, alto // 2 + 60))
+    )
+
+    return escena
 
 
-        pantalla.blit(
-            texto,
-            texto.get_rect(
-                center=(
-                    ANCHO // 2,
-                    ALTO // 2 - 40
-                )
+def pantalla_game_over(pantalla, reloj, fuente_media):
+
+    ancho, alto = pantalla.get_size()
+
+    escena = _crear_escena_game_over(ancho, alto, fuente_media)
+
+    tiempo = 0.0
+
+    total = GAME_OVER_APARECE_SEG + GAME_OVER_DESVANECE_SEG
+
+    while tiempo < total:
+
+        # El primer frame ya se ve completo: aparece de golpe
+        if tiempo <= GAME_OVER_APARECE_SEG:
+
+            opacidad = 1.0
+
+        else:
+
+            opacidad = 1.0 - (
+                (tiempo - GAME_OVER_APARECE_SEG)
+                / GAME_OVER_DESVANECE_SEG
             )
-        )
 
+        escena.set_alpha(int(255 * max(0.0, opacidad)))
 
-        pantalla.blit(
-            sub,
-            sub.get_rect(
-                center=(
-                    ANCHO // 2,
-                    ALTO // 2 + 30
-                )
-            )
-        )
+        pantalla.fill(NEGRO)
 
+        pantalla.blit(escena, (0, 0))
+
+        pygame.display.flip()
 
         for evento in pygame.event.get():
 
@@ -1196,18 +1277,11 @@ def pantalla_victoria(
                 pygame.quit()
                 sys.exit()
 
+        tiempo += min(reloj.tick(FPS) / 1000.0, 0.05)
 
-            if (
-                evento.type == pygame.KEYDOWN
-                and evento.key == pygame.K_RETURN
-            ):
+    pantalla.fill(NEGRO)
 
-                return "menu"
-
-
-        pygame.display.flip()
-
-        reloj.tick(FPS)
+    pygame.display.flip()
 
 
 # ==========================================================
@@ -1264,7 +1338,8 @@ def jugar(
     sprites,
     fuente_grande,
     fuente_media,
-    cabeza=None
+    cabeza=None,
+    nivel=1
 ):
 
     jugador = Jugador(
@@ -1281,7 +1356,7 @@ def jugar(
     # o volver al menu, y solo se borran al perder todas las vidas.
     puntos = cargar_puntos()
 
-    items = crear_items()
+    items = crear_items(nivel)
 
     textos_flotantes = []
 
@@ -1503,12 +1578,33 @@ def jugar(
                 # seleccion de personaje
                 reiniciar_progreso()
 
+                pantalla_game_over(
+                    pantalla,
+                    reloj,
+                    fuente_media
+                )
+
                 return "personajes"
 
 
             # ----------------------------------------------
             # PANTALLA NEGRA
+            #
+            # Primero se cierra el círculo sobre el jugador (se sigue
+            # viendo el nivel), y después se abre en la pantalla de
+            # vidas. Al terminar se repite para volver al nivel.
             # ----------------------------------------------
+
+            transicion.cerrar_circulo(
+                pantalla,
+                reloj,
+                (
+                    max(0, min(ANCHO, jugador.rect.centerx - camara_x)),
+                    max(0, min(ALTO, jugador.rect.centery))
+                )
+            )
+
+            transicion.abrir_circulo()
 
             pantalla_vidas(
                 pantalla,
@@ -1517,6 +1613,10 @@ def jugar(
                 vidas,
                 fuente_media
             )
+
+            transicion.cerrar_circulo(pantalla, reloj)
+
+            transicion.abrir_circulo()
 
 
             # ----------------------------------------------
@@ -1610,12 +1710,11 @@ def jugar(
 
         if jugador.rect.x >= META_X:
 
-            return pantalla_victoria(
-                pantalla,
-                reloj,
-                fuente_grande,
-                fuente_media
-            )
+            # Nivel terminado: queda anotado y se vuelve al mapa, donde
+            # el punto se vuelve negro y aparece el camino al siguiente
+            completar_nivel(nivel)
+
+            return "mapa_victoria"
 
 
         # ==================================================
@@ -1810,6 +1909,27 @@ def jugar(
                 aviso_puntos / DURACION_AVISO,
                 derecha=True
             )
+
+
+        # ==================================================
+        # HUD: NUMERO DE NIVEL (arriba, en el centro)
+        # ==================================================
+
+        texto_nivel = fuente_media.render(
+            "NIVEL " + str(nivel),
+            True,
+            NEGRO
+        )
+
+        pantalla.blit(
+            texto_nivel,
+            texto_nivel.get_rect(
+                midtop=(
+                    ANCHO // 2,
+                    12
+                )
+            )
+        )
 
 
         # ==================================================

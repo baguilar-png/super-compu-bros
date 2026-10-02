@@ -5,6 +5,9 @@ Persistencia de datos del juego (todo en archivos .txt al lado del juego).
     personajes.txt  -> nombre del personaje elegido
     bebidas.txt     -> una bebida por linea, las que ya se recogieron
                        (asi no se pueden farmear puntos ni vidas)
+    nivel.txt       -> progreso en el mapa de Buenos Aires: niveles
+                       completados, donde esta parado el personaje y por
+                       que puntitos del camino ya paso (los negros)
 
 Todo sobrevive a: ESC, cerrar la ventana y cerrar el programa.
 Todo se borra junto SOLO cuando el jugador pierde todas las vidas
@@ -18,6 +21,10 @@ CARPETA = os.path.dirname(os.path.abspath(__file__))
 RUTA_PUNTOS = os.path.join(CARPETA, "puntos.txt")
 RUTA_PERSONAJE = os.path.join(CARPETA, "personajes.txt")
 RUTA_BEBIDAS = os.path.join(CARPETA, "bebidas.txt")
+RUTA_NIVEL = os.path.join(CARPETA, "nivel.txt")
+
+# Cantidad de niveles del mapa (la Boca -> ... -> la Boca)
+TOTAL_NIVELES = 15
 
 
 # ==========================================================
@@ -123,6 +130,82 @@ def guardar_bebida(id_bebida):
 
 
 # ==========================================================
+# PROGRESO EN EL MAPA
+# ==========================================================
+
+def cargar_mapa():
+    """
+    (niveles_completados, x, y, tocados) guardados.
+
+    x, y     -> donde quedo parado el personaje en el mapa (coordenadas de
+                la imagen original); None si todavia no hay posicion
+    tocados  -> puntitos del camino actual por los que ya paso (negros)
+    Si no hay archivo (o esta roto) se empieza de cero.
+    """
+
+    texto = _leer(RUTA_NIVEL)
+
+    try:
+        lineas = texto.splitlines()
+
+        completados, x, y = lineas[0].split()[:3]
+
+        completados = max(0, min(TOTAL_NIVELES, int(completados)))
+
+        x = None if x == "-" else float(x)
+        y = None if y == "-" else float(y)
+
+        tocados = []
+
+        if len(lineas) > 1:
+
+            tocados = [
+                int(n) for n in lineas[1].split(",") if n.strip()
+            ]
+
+        return completados, x, y, tocados
+
+    except (AttributeError, IndexError, ValueError):
+        return 0, None, None, []
+
+
+def guardar_mapa(completados, x, y, tocados):
+
+    _escribir(
+        RUTA_NIVEL,
+        "%d %s %s\n%s\n" % (
+            completados,
+            "-" if x is None else "%.1f" % x,
+            "-" if y is None else "%.1f" % y,
+            ",".join(str(n) for n in sorted(tocados))
+        )
+    )
+
+
+def completar_nivel(nivel):
+    """
+    Se llego a la meta del nivel (1 a 15). Se suma a los completados, el
+    personaje queda donde estaba y el camino al siguiente arranca limpio.
+    """
+
+    completados, x, y, _ = cargar_mapa()
+
+    if nivel > completados:
+
+        guardar_mapa(min(nivel, TOTAL_NIVELES), x, y, [])
+
+
+def nueva_vuelta():
+    """
+    Se terminaron los 15 niveles: el mapa y las bebidas se borran para
+    poder volver a jugar desde la Boca (puntos y personaje se conservan).
+    """
+
+    _borrar(RUTA_NIVEL)
+    _borrar(RUTA_BEBIDAS)
+
+
+# ==========================================================
 # GAME OVER
 # ==========================================================
 
@@ -136,3 +219,4 @@ def reiniciar_progreso():
     _borrar(RUTA_PUNTOS)
     _borrar(RUTA_PERSONAJE)
     _borrar(RUTA_BEBIDAS)
+    _borrar(RUTA_NIVEL)
