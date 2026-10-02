@@ -36,7 +36,7 @@ pantalla = pygame.display.set_mode(
 )
 
 pygame.display.set_caption(
-    "Super Compu Bros Alpha 1.000.0"
+    "Super Compu Bros Alpha 1.000.1"
 )
 
 

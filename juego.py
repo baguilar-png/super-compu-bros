@@ -1,5 +1,6 @@
 import math
 import os
+import random
 import sys
 
 import pygame
@@ -14,7 +15,9 @@ from archivos import (
     cargar_bebidas,
     guardar_bebida,
     reiniciar_progreso,
-    completar_nivel
+    completar_nivel,
+    cargar_vidas_extra,
+    gastar_vida_extra
 )
 
 
@@ -49,6 +52,33 @@ SUELO_Y = ALTO - 60
 META_X = NIVEL_ANCHO - 100
 
 VIDAS_INICIALES = 3
+
+# ----------------------------------------------------------
+# PELOTAS DE FUTBOL (enemigos que vienen volando desde la derecha)
+# ----------------------------------------------------------
+
+# Solo aparecen despues de este nivel (del 8 en adelante)
+NIVEL_PELOTAS = 7
+
+# El doble de rapido que el personaje
+VELOCIDAD_PELOTA = VELOCIDAD_MOV * 2
+
+ESCALA_PELOTA = 4
+
+# Cada cuantos segundos sale una pelota (al azar entre los dos valores)
+ESPERA_PELOTA_MIN = 1.5
+ESPERA_PELOTA_MAX = 5.0
+
+# Altura maxima que alcanza un salto: v^2 / (2 * g)
+SALTO_MAXIMO = SALTO_FUERZA ** 2 / (2 * GRAVEDAD)
+
+# Cuanto gira por segundo (grados)
+GIRO_PELOTA = 900
+
+# Pelota pisada: se cae y desaparece titilando
+ESPERA_PELOTA_CAIDA = 0.45
+
+TITILEO_PELOTA = 0.06
 
 CARPETA = os.path.dirname(os.path.abspath(__file__))
 
@@ -916,6 +946,192 @@ def crear_enemigos(sprite):
 
 
 # ==========================================================
+# PELOTAS DE FUTBOL
+#
+# Dos dibujos distintos; cada vez que sale una se elige uno al azar.
+# Llegan desde la derecha en cualquier momento, al doble de velocidad
+# del personaje, y a una altura al azar entre el piso y lo mas alto que
+# se puede llegar saltando (nunca pasan por encima de un salto).
+# Si se las toca desde arriba (cayendo sobre ellas) se caen y no pasa
+# nada; de costado o desde abajo te sacan una vida.
+# ==========================================================
+
+_sprites_pelotas = []
+
+
+def cargar_sprites_pelotas():
+
+    if not _sprites_pelotas:
+
+        for archivo in ("pelota_1.png", "pelota_2.png"):
+
+            original = pygame.image.load(
+                os.path.join(CARPETA, "assets", "enemigos", archivo)
+            ).convert_alpha()
+
+            recorte = original.subsurface(
+                original.get_bounding_rect()
+            ).copy()
+
+            _sprites_pelotas.append(
+                pygame.transform.scale(
+                    recorte,
+                    (
+                        recorte.get_width() * ESCALA_PELOTA,
+                        recorte.get_height() * ESCALA_PELOTA
+                    )
+                )
+            )
+
+    return _sprites_pelotas
+
+
+class Pelota:
+
+    def __init__(self, sprite, x, centro_y):
+
+        self.sprite = sprite
+
+        self.mask = pygame.mask.from_surface(sprite)
+
+        self.rect = sprite.get_rect(center=(x, centro_y))
+
+        # Posicion con decimales (el rect solo guarda enteros)
+        self.x = float(self.rect.x)
+
+        self.y = float(self.rect.y)
+
+        self.angulo = random.uniform(0, 360)
+
+        self.vel_x = -VELOCIDAD_PELOTA
+
+        self.vel_y = 0.0
+
+        # True cuando la pisaron: ya no lastima a nadie
+        self.cayendo = False
+
+        # Segundos que le quedan de titilar una vez que toco el piso
+        self.espera_suelo = None
+
+
+    def tirar(self):
+        """El jugador la piso desde arriba: pierde fuerza y se cae."""
+
+        self.cayendo = True
+
+        self.vel_x *= 0.25
+
+        self.vel_y = 0.0
+
+
+    @property
+    def terminada(self):
+        """Ya se cayo, titilo y hay que sacarla."""
+
+        return self.espera_suelo is not None and self.espera_suelo <= 0
+
+
+    def mover(self, dt):
+
+        if not self.cayendo:
+
+            self.x += self.vel_x * dt
+
+            self.rect.x = round(self.x)
+
+            # Rueda hacia la izquierda
+            self.angulo = (self.angulo + GIRO_PELOTA * dt) % 360
+
+            return
+
+        # ----- cayendo -----
+        self.x += self.vel_x * dt
+
+        self.vel_y += GRAVEDAD * dt
+
+        self.y += self.vel_y * dt
+
+        self.angulo = (self.angulo + GIRO_PELOTA * 0.3 * dt) % 360
+
+        if self.y + self.rect.height >= SUELO_Y:
+
+            self.y = SUELO_Y - self.rect.height
+
+            self.vel_y = 0.0
+
+            self.vel_x = 0.0
+
+            if self.espera_suelo is None:
+
+                self.espera_suelo = ESPERA_PELOTA_CAIDA
+
+        if self.espera_suelo is not None:
+
+            self.espera_suelo -= dt
+
+        self.rect.x = round(self.x)
+
+        self.rect.y = round(self.y)
+
+
+    def salio_de_pantalla(self, camara_x):
+
+        return self.rect.right < camara_x - 60
+
+
+    def dibujar(self, superficie, camara_x):
+
+        # Ya en el piso titila antes de desaparecer
+        if (
+            self.espera_suelo is not None
+            and int(self.espera_suelo / TITILEO_PELOTA) % 2 == 0
+        ):
+
+            return
+
+        # El giro se redondea de a 15 grados para que sea parejo
+        girada = pygame.transform.rotate(
+            self.sprite,
+            round(self.angulo / 15) * 15
+        )
+
+        superficie.blit(
+            girada,
+            girada.get_rect(
+                center=self.rect.move(-camara_x, 0).center
+            )
+        )
+
+
+def crear_pelota(camara_x, jugador, sprites):
+    """
+    Pelota nueva justo afuera del borde derecho de la pantalla.
+
+    Altura al azar: la mas baja rueda por el piso y la mas alta es la que
+    todavia toca al jugador en lo mas alto de su salto.
+    """
+
+    sprite = random.choice(sprites)
+
+    alto = sprite.get_height()
+
+    # Cabeza del jugador en lo mas alto del salto
+    tope_salto = SUELO_Y - jugador.sprites["alto"] - SALTO_MAXIMO
+
+    # Centro mas alto posible: la pelota queda a la altura de la cabeza
+    # del jugador cuando salta lo maximo
+    centro_alto = max(alto / 2, tope_salto + alto / 2)
+
+    centro_bajo = SUELO_Y - alto / 2
+
+    return Pelota(
+        sprite,
+        camara_x + ANCHO + 10,
+        random.uniform(centro_alto, centro_bajo)
+    )
+
+
+# ==========================================================
 # COLISIÓN POR PÍXELES
 # ==========================================================
 
@@ -961,6 +1177,54 @@ def colision_por_pixeles(
             offset_y
         )
     ) is not None
+
+
+# ==========================================================
+# CHOQUE CON LAS PELOTAS
+# ==========================================================
+
+def resolver_pelotas(jugador, pelotas, bottom_anterior):
+    """
+    Revisa si el jugador toca alguna pelota.
+
+        - Cayendo sobre ella desde arriba: la pelota se cae, el jugador
+          rebota y no pasa nada (igual que al aplastar un enemigo).
+        - De costado o desde abajo: devuelve True (pierde una vida).
+    """
+
+    for pelota in pelotas:
+
+        if pelota.cayendo:
+
+            continue
+
+        if not jugador.rect.colliderect(pelota.rect):
+
+            continue
+
+        esta_cayendo = jugador.vel_y > 0
+
+        viene_desde_arriba = bottom_anterior <= pelota.rect.top + 18
+
+        esta_cerca = pelota.rect.top - jugador.rect.bottom <= 18
+
+        if esta_cayendo and viene_desde_arriba and esta_cerca:
+
+            pelota.tirar()
+
+            jugador.rect.bottom = pelota.rect.top
+
+            jugador.vel_y = SALTO_FUERZA * 0.55
+
+            jugador.en_suelo = False
+
+            return False
+
+        if colision_por_pixeles(jugador, pelota):
+
+            return True
+
+    return False
 
 
 # ==========================================================
@@ -1350,13 +1614,20 @@ def jugar(
         sprites["enemigo"]
     )
 
-    vidas = VIDAS_INICIALES
+    # Las 3 vidas de cada nivel + las que se compraron en la tienda de
+    # San Telmo y todavia no se usaron
+    vidas = VIDAS_INICIALES + cargar_vidas_extra()
 
     # Los puntos vienen del archivo: se conservan al salir del juego
     # o volver al menu, y solo se borran al perder todas las vidas.
     puntos = cargar_puntos()
 
     items = crear_items(nivel)
+
+    # Pelotas de futbol (solo del nivel 8 en adelante)
+    pelotas = []
+
+    espera_pelota = random.uniform(ESPERA_PELOTA_MIN, ESPERA_PELOTA_MAX)
 
     textos_flotantes = []
 
@@ -1442,6 +1713,48 @@ def jugar(
 
 
         # ==================================================
+        # PELOTAS DE FUTBOL
+        # ==================================================
+
+        if nivel > NIVEL_PELOTAS:
+
+            camara_pelotas = max(
+                0,
+                min(
+                    jugador.rect.centerx - ANCHO // 2,
+                    NIVEL_ANCHO - ANCHO
+                )
+            )
+
+            espera_pelota -= dt
+
+            if espera_pelota <= 0:
+
+                pelotas.append(
+                    crear_pelota(
+                        camara_pelotas,
+                        jugador,
+                        cargar_sprites_pelotas()
+                    )
+                )
+
+                espera_pelota = random.uniform(
+                    ESPERA_PELOTA_MIN,
+                    ESPERA_PELOTA_MAX
+                )
+
+            for pelota in pelotas:
+
+                pelota.mover(dt)
+
+            pelotas = [
+                p for p in pelotas
+                if not p.salio_de_pantalla(camara_pelotas)
+                and not p.terminada
+            ]
+
+
+        # ==================================================
         # COLISIÓN
         # ==================================================
 
@@ -1515,6 +1828,17 @@ def jugar(
                 break
 
 
+        # Pelotas: pisarlas desde arriba las tira, tocarlas de costado
+        # o desde abajo es perder una vida
+        if not murio:
+
+            murio = resolver_pelotas(
+                jugador,
+                pelotas,
+                jugador_bottom_anterior
+            )
+
+
         # ==================================================
         # ELIMINAR ENEMIGOS APLASTADOS
         # ==================================================
@@ -1536,6 +1860,9 @@ def jugar(
         if murio:
 
             vidas -= 1
+
+            # Si quedaba una vida comprada en la tienda, se gasta esa
+            gastar_vida_extra()
 
 
             # ----------------------------------------------
@@ -1634,6 +1961,13 @@ def jugar(
 
             enemigos = crear_enemigos(
                 sprites["enemigo"]
+            )
+
+            pelotas = []
+
+            espera_pelota = random.uniform(
+                ESPERA_PELOTA_MIN,
+                ESPERA_PELOTA_MAX
             )
 
             continue
@@ -1793,6 +2127,13 @@ def jugar(
         for enemigo in enemigos:
 
             enemigo.dibujar(
+                pantalla,
+                camara_x
+            )
+
+        for pelota in pelotas:
+
+            pelota.dibujar(
                 pantalla,
                 camara_x
             )

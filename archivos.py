@@ -8,6 +8,10 @@ Persistencia de datos del juego (todo en archivos .txt al lado del juego).
     nivel.txt       -> progreso en el mapa de Buenos Aires: niveles
                        completados, donde esta parado el personaje y por
                        que puntitos del camino ya paso (los negros)
+    tienda.txt      -> existe si ya se entro a la tienda de San Telmo
+                       (sirve para sacar los signos de exclamacion)
+    vidas_extra.txt -> vidas compradas en la tienda que todavia no se
+                       usaron (se suman a las 3 de cada nivel)
 
 Todo sobrevive a: ESC, cerrar la ventana y cerrar el programa.
 Todo se borra junto SOLO cuando el jugador pierde todas las vidas
@@ -22,6 +26,8 @@ RUTA_PUNTOS = os.path.join(CARPETA, "puntos.txt")
 RUTA_PERSONAJE = os.path.join(CARPETA, "personajes.txt")
 RUTA_BEBIDAS = os.path.join(CARPETA, "bebidas.txt")
 RUTA_NIVEL = os.path.join(CARPETA, "nivel.txt")
+RUTA_TIENDA = os.path.join(CARPETA, "tienda.txt")
+RUTA_VIDAS_EXTRA = os.path.join(CARPETA, "vidas_extra.txt")
 
 # Cantidad de niveles del mapa (la Boca -> ... -> la Boca)
 TOTAL_NIVELES = 15
@@ -195,6 +201,44 @@ def completar_nivel(nivel):
         guardar_mapa(min(nivel, TOTAL_NIVELES), x, y, [])
 
 
+def tienda_visitada():
+    """True si ya se entro alguna vez a la tienda de San Telmo."""
+
+    return _leer(RUTA_TIENDA) is not None
+
+
+def marcar_tienda_visitada():
+
+    _escribir(RUTA_TIENDA, "1\n")
+
+
+def cargar_vidas_extra():
+    """Vidas compradas en la tienda que todavia no se usaron."""
+
+    texto = _leer(RUTA_VIDAS_EXTRA)
+
+    try:
+        return max(0, int(texto.strip()))
+
+    except (AttributeError, ValueError):
+        return 0
+
+
+def guardar_vidas_extra(cantidad):
+
+    _escribir(RUTA_VIDAS_EXTRA, str(max(0, int(cantidad))) + "\n")
+
+
+def gastar_vida_extra():
+    """Se perdio una vida: si quedaba una extra comprada, se usa esa."""
+
+    cantidad = cargar_vidas_extra()
+
+    if cantidad > 0:
+
+        guardar_vidas_extra(cantidad - 1)
+
+
 def nueva_vuelta():
     """
     Se terminaron los 15 niveles: el mapa y las bebidas se borran para
@@ -203,6 +247,7 @@ def nueva_vuelta():
 
     _borrar(RUTA_NIVEL)
     _borrar(RUTA_BEBIDAS)
+    _borrar(RUTA_TIENDA)
 
 
 # ==========================================================
@@ -220,3 +265,5 @@ def reiniciar_progreso():
     _borrar(RUTA_PERSONAJE)
     _borrar(RUTA_BEBIDAS)
     _borrar(RUTA_NIVEL)
+    _borrar(RUTA_TIENDA)
+    _borrar(RUTA_VIDAS_EXTRA)

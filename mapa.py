@@ -12,6 +12,11 @@ personaje se mueve libremente por el mapa.
     - Al terminar un nivel el punto se vuelve negro y salen puntitos que
       guian hacia el proximo; se ponen negros cuando se pasa por encima.
     - Parado sobre el punto del nivel actual, ENTER (o ESPACIO) lo juega.
+    - Tienda de San Telmo: aparece con la cara de la tienda (en gris hasta
+      llegar al nivel 5). Al desbloquearla salen dos signos de
+      exclamacion hasta que se entra por primera vez. Adentro se vende
+      el chipa (10000 puntos = 1 vida): se ve el precio al pasar el mouse
+      por encima y se compra con click. ESC para volver.
 """
 
 import math
@@ -23,8 +28,14 @@ import pygame
 from archivos import (
     TOTAL_NIVELES,
     cargar_mapa,
+    cargar_puntos,
+    cargar_vidas_extra,
     guardar_mapa,
-    nueva_vuelta
+    guardar_puntos,
+    guardar_vidas_extra,
+    marcar_tienda_visitada,
+    nueva_vuelta,
+    tienda_visitada
 )
 from pixel_font import FuentePixel
 
@@ -128,6 +139,49 @@ TRAMOS = [
 
 assert len(NIVELES) == TOTAL_NIVELES
 assert len(TRAMOS) == TOTAL_NIVELES - 1
+
+
+# ==========================================================
+# TIENDA DE SAN TELMO
+# ==========================================================
+
+# Posicion sobre la imagen original del mapa (al lado del nivel de San Telmo)
+TIENDA_PUNTO = (1160, 655)
+
+# Se desbloquea al llegar a este nivel (el nivel 5 es el que toca jugar
+# cuando ya se completaron 4)
+NIVEL_TIENDA = 5
+
+TIENDA_CARPETA = os.path.join("assets", "tienda")
+
+ESCALA_STAND = 8            # tamano del stand dentro de la tienda
+
+ESCALA_CHIPA = 5            # tamano del chipa en el mostrador
+
+# Fila (del dibujo del stand, sin borde transparente) donde empieza el
+# mostrador de madera de abajo: ahi se apoya el chipa
+FILA_MOSTRADOR = 46
+
+PRECIO_CHIPA = 10000        # puntos que cuesta el chipa
+
+VIDAS_CHIPA = 1             # vidas que da el chipa
+
+DURACION_EFECTO = 0.9       # segundos que dura el efecto de la compra
+
+DIBUJO_CORAZON = [
+    ".BB.BB.",
+    "BWWBWWB",
+    "BWWWWWB",
+    ".BWWWB.",
+    "..BWB..",
+    "...B...",
+]
+
+ESCALA_EXCLAMACION = 2      # tamano de los signos de exclamacion
+
+REBOTE_EXCLAMACION = 3      # pixeles que sube y baja la exclamacion
+
+VELOCIDAD_REBOTE = 5.0      # rapidez del rebote (radianes por segundo)
 
 
 # ==========================================================
@@ -415,6 +469,51 @@ def crear_globo(lineas, fuente, color_texto, color_borde, color_relleno,
 
 
 # ==========================================================
+# IMAGENES DE LA TIENDA
+# ==========================================================
+
+def _cargar_recortada(nombre, escala=1):
+    """Carga una imagen de assets/tienda sin el borde transparente."""
+
+    imagen = pygame.image.load(
+        os.path.join(CARPETA, TIENDA_CARPETA, nombre)
+    ).convert_alpha()
+
+    recorte = imagen.subsurface(imagen.get_bounding_rect()).copy()
+
+    if escala != 1:
+
+        recorte = pygame.transform.scale(
+            recorte,
+            (recorte.get_width() * escala, recorte.get_height() * escala)
+        )
+
+    return recorte
+
+
+def _en_gris(imagen):
+    """La misma imagen en gris (para la tienda todavia bloqueada)."""
+
+    gris = imagen.copy()
+
+    for y in range(gris.get_height()):
+
+        for x in range(gris.get_width()):
+
+            r, g, b, a = gris.get_at((x, y))
+
+            if a:
+
+                # Gris apagado: se achica el contraste para que se note
+                # que esta bloqueada
+                v = int((r * 0.3 + g * 0.59 + b * 0.11) * 0.5 + 70)
+
+                gris.set_at((x, y), (v, v, v, a))
+
+    return gris
+
+
+# ==========================================================
 # RECURSOS (se cargan una sola vez)
 # ==========================================================
 
@@ -461,6 +560,58 @@ def _cargar_recursos():
             [texto], fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
         )
 
+    # Tienda de San Telmo: cara (gris si esta bloqueada), exclamaciones,
+    # stand de adentro y sus globos
+    cara = _cargar_recortada("icono_tienda.png")
+
+    _recursos["tienda_cara"] = cara
+    _recursos["tienda_cara_gris"] = _en_gris(cara)
+    _recursos["tienda_exclamacion"] = _cargar_recortada(
+        "exclamacion.png", ESCALA_EXCLAMACION
+    )
+    _recursos["tienda_stand"] = _cargar_recortada(
+        "stand_parashop.png", ESCALA_STAND
+    )
+    _recursos["tienda_chipa"] = _cargar_recortada(
+        "chipa.png", ESCALA_CHIPA
+    )
+
+    # Fondo de la tienda: se escala para cubrir la ventana y se recorta
+    # el sobrante de los costados (sin deformar la imagen)
+    fondo = pygame.image.load(
+        os.path.join(CARPETA, TIENDA_CARPETA, "fondo_tienda.png")
+    ).convert()
+
+    escala_fondo = max(ANCHO / fondo.get_width(), ALTO / fondo.get_height())
+
+    fondo = pygame.transform.smoothscale(
+        fondo,
+        (
+            round(fondo.get_width() * escala_fondo),
+            round(fondo.get_height() * escala_fondo)
+        )
+    )
+
+    _recursos["tienda_fondo"] = fondo.subsurface(
+        (
+            (fondo.get_width() - ANCHO) // 2,
+            (fondo.get_height() - ALTO) // 2,
+            ANCHO,
+            ALTO
+        )
+    ).copy()
+
+    _recursos["fuente"] = fuente
+
+    _recursos["globo_tienda"] = crear_globo(
+        ["TIENDA"], fuente, NEGRO, NEGRO, BLANCO
+    )
+
+    _recursos["globo_tienda_bloqueada"] = crear_globo(
+        ["TIENDA", "NIVEL %d" % NIVEL_TIENDA],
+        fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
+    )
+
     # Cartel del final (sin cola, arriba en el centro de la pantalla)
     _recursos["globo_final"] = crear_globo(
         ["¡FELICITACIONES!", "ENTER PARA SALIR"],
@@ -468,6 +619,237 @@ def _cargar_recursos():
     )
 
     return _recursos
+
+
+# ==========================================================
+# PANTALLA DE LA TIENDA (vende el chipa)
+# ==========================================================
+
+# (color del texto, color del borde, color del relleno) de cada globo
+ESTILOS_GLOBO = {
+    "blanco": (NEGRO, NEGRO, BLANCO),
+    "gris": (GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO),
+}
+
+
+def pantalla_tienda(pantalla, reloj, rec):
+    """
+    Tienda de San Telmo. Sin textos: solo el stand abajo, en el centro de
+    la pantalla, con el chipa apoyado en el mostrador.
+
+        mouse sobre el chipa -> aparece el precio (gris si no alcanzan
+                                los puntos)
+        click en el chipa    -> lo compra: cuesta PRECIO_CHIPA puntos y da
+                                una vida extra (se guarda en
+                                vidas_extra.txt hasta que se use). Sale un
+                                corazoncito. Si no alcanzan los puntos, el
+                                chipa tiembla.
+        ESC                  -> vuelve al mapa
+
+    Devuelve True si se cerro la ventana, False si se volvio con ESC.
+    """
+
+    fuente = rec["fuente"]
+
+    fondo = rec["tienda_fondo"]
+
+    stand = rec["tienda_stand"]
+
+    chipa = rec["tienda_chipa"]
+
+    corazon = pygame.transform.scale(
+        crear_punto(DIBUJO_CORAZON, (110, 0, 25), (240, 35, 65)),
+        (14 * 2, 12 * 2)
+    )
+
+    puntos = cargar_puntos()
+
+    extras = cargar_vidas_extra()
+
+    # Stand abajo de todo, apoyado en el borde de la pantalla y centrado
+    rect_stand = stand.get_rect(midbottom=(ANCHO // 2, ALTO))
+
+    # Chipa apoyado en la madera del mostrador, centrado
+    base_mostrador = rect_stand.top + FILA_MOSTRADOR * ESCALA_STAND + 8
+
+    rect_chipa = chipa.get_rect(
+        midbottom=(rect_stand.centerx, base_mostrador)
+    )
+
+    corazones = []          # [x, y, segundos_de_vida]
+
+    t_tiembla = 0.0         # sin puntos: el chipa tiembla
+
+    t_salta = 0.0           # recien comprado: el chipa pega un saltito
+
+    t = 0.0
+
+    cache = {}
+
+    def globo(lineas, estilo):
+        """Globos pixel art; se arman una sola vez y se guardan."""
+
+        clave = (tuple(lineas), estilo)
+
+        if clave not in cache:
+
+            texto, borde, relleno = ESTILOS_GLOBO[estilo]
+
+            cache[clave] = crear_globo(
+                lineas, fuente, texto, borde, relleno, con_cola=False
+            )
+
+        return cache[clave]
+
+    def cursor(hay_mano):
+
+        try:
+
+            pygame.mouse.set_cursor(
+                pygame.SYSTEM_CURSOR_HAND if hay_mano
+                else pygame.SYSTEM_CURSOR_ARROW
+            )
+
+        except (pygame.error, AttributeError):
+
+            pass
+
+    mano = False
+
+    while True:
+
+        dt = min(reloj.tick(FPS) / 1000.0, 0.05)
+
+        t += dt
+
+        t_tiembla = max(0.0, t_tiembla - dt)
+
+        t_salta = max(0.0, t_salta - dt)
+
+        mouse = pygame.mouse.get_pos()
+
+        encima = rect_chipa.collidepoint(mouse)
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+
+                cursor(False)
+
+                return True
+
+            if evento.type == pygame.KEYDOWN:
+
+                if evento.key in (pygame.K_ESCAPE, pygame.K_BACKSPACE):
+
+                    cursor(False)
+
+                    return False
+
+            # Se compra clickeando el chipa (no con el teclado)
+            if (
+                evento.type == pygame.MOUSEBUTTONDOWN
+                and evento.button == 1
+                and rect_chipa.collidepoint(evento.pos)
+            ):
+
+                if puntos >= PRECIO_CHIPA:
+
+                    puntos -= PRECIO_CHIPA
+
+                    extras += VIDAS_CHIPA
+
+                    guardar_puntos(puntos)
+
+                    guardar_vidas_extra(extras)
+
+                    t_salta = DURACION_EFECTO / 2
+
+                    corazones.append(
+                        [rect_chipa.centerx, rect_chipa.top - 4, DURACION_EFECTO]
+                    )
+
+                else:
+
+                    t_tiembla = DURACION_EFECTO / 2
+
+        # Manito cuando el mouse esta sobre el chipa
+        if encima != mano:
+
+            mano = encima
+
+            cursor(mano)
+
+        # ----- fondo y stand -----
+        pantalla.blit(fondo, (0, 0))
+
+        pantalla.blit(stand, rect_stand)
+
+        # ----- chipa -----
+        dx = 0
+
+        dy = 0
+
+        if t_tiembla > 0:
+
+            dx = round(math.sin(t * 60) * 5)
+
+        if t_salta > 0:
+
+            fase = 1 - t_salta / (DURACION_EFECTO / 2)
+
+            dy = -round(math.sin(fase * math.pi) * 14)
+
+        imagen = chipa
+
+        if encima:
+
+            # Un poquito mas grande para que se note que se puede clickear
+            imagen = pygame.transform.scale(
+                chipa,
+                (chipa.get_width() + 8, chipa.get_height() + 8)
+            )
+
+        pantalla.blit(
+            imagen,
+            imagen.get_rect(
+                midbottom=(rect_chipa.centerx + dx, rect_chipa.bottom + dy)
+            )
+        )
+
+        # ----- corazones que suben al comprar -----
+        for c in corazones:
+
+            c[1] -= 60 * dt
+
+            c[2] -= dt
+
+            h = corazon.copy()
+
+            h.set_alpha(max(0, min(255, int(255 * c[2] / DURACION_EFECTO))))
+
+            pantalla.blit(h, h.get_rect(center=(round(c[0]), round(c[1]))))
+
+        corazones = [c for c in corazones if c[2] > 0]
+
+        # ----- precio al pasar el mouse -----
+        if encima:
+
+            cartel = globo(
+                ["%d PUNTOS" % PRECIO_CHIPA],
+                "blanco" if puntos >= PRECIO_CHIPA else "gris"
+            )
+
+            # Al costado del cursor, para no tapar el chipa
+            rect_cartel = cartel.get_rect(
+                topleft=(mouse[0] + 16, mouse[1] + 6)
+            )
+
+            rect_cartel.clamp_ip(pantalla.get_rect())
+
+            pantalla.blit(cartel, rect_cartel)
+
+        pygame.display.flip()
 
 
 # ==========================================================
@@ -495,6 +877,15 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
     tocados = set(tocados)
 
     fin = completados >= TOTAL_NIVELES
+
+    # La tienda de San Telmo se desbloquea al llegar al nivel 5
+    tienda_abierta = completados >= NIVEL_TIENDA - 1
+
+    tienda_vista = tienda_visitada()
+
+    tx, ty = a_mapa(TIENDA_PUNTO)
+
+    t_reloj = 0.0
 
     # El nivel que toca jugar (o el ultimo, si ya esta todo completo)
     actual = min(completados, TOTAL_NIVELES - 1)
@@ -535,6 +926,8 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
     while True:
 
         dt = min(reloj.tick(FPS) / 1000.0, 0.05)
+
+        t_reloj += dt
 
         # ==================================================
         # EVENTOS
@@ -639,6 +1032,27 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             and math.hypot(px - nx, py - ny) <= RADIO_ENTRADA
         )
 
+        parado_en_tienda = (
+            tienda_abierta
+            and not animando
+            and math.hypot(px - tx, py - ty) <= RADIO_ENTRADA
+        )
+
+        if quiere_entrar and parado_en_tienda:
+
+            tienda_vista = True
+
+            marcar_tienda_visitada()
+
+            guardar()
+
+            if pantalla_tienda(pantalla, reloj, rec):
+
+                pygame.quit()
+                sys.exit()
+
+            continue
+
         if quiere_entrar and not animando:
 
             if fin:
@@ -736,6 +1150,31 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 imagen.get_rect(center=(round(x) - camara_x, round(y)))
             )
 
+        # ----- tienda de San Telmo -----
+        cara = (
+            rec["tienda_cara"] if tienda_abierta else rec["tienda_cara_gris"]
+        )
+
+        rect_cara = cara.get_rect(center=(round(tx) - camara_x, round(ty)))
+
+        pantalla.blit(cara, rect_cara)
+
+        # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
+        if tienda_abierta and not tienda_vista:
+
+            excl = rec["tienda_exclamacion"]
+
+            rebote = round(
+                math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
+            )
+
+            pantalla.blit(
+                excl,
+                excl.get_rect(
+                    midbottom=(rect_cara.centerx, rect_cara.top - 2 + rebote)
+                )
+            )
+
         # ----- personaje -----
         if moviendose:
 
@@ -780,6 +1219,23 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             bloqueado = cerca > completados
 
             globo = rec["globos"][(cerca + 1, bloqueado)]
+
+            rect_globo = globo.get_rect(
+                midbottom=(rect_personaje.centerx, rect_personaje.top - 2)
+            )
+
+            rect_globo.clamp_ip(pantalla.get_rect())
+
+            pantalla.blit(globo, rect_globo)
+
+        # ----- globo de la tienda -----
+        if cerca is None and math.hypot(px - tx, py - ty) <= RADIO_GLOBO:
+
+            globo = (
+                rec["globo_tienda"]
+                if tienda_abierta
+                else rec["globo_tienda_bloqueada"]
+            )
 
             rect_globo = globo.get_rect(
                 midbottom=(rect_personaje.centerx, rect_personaje.top - 2)
