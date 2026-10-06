@@ -11,6 +11,7 @@ from intro import pantallas_intro
 from pixel_font import FuentePixel
 from fondo_menu import FondoMenuAnimado
 import transicion
+import musica
 from archivos import (
     cargar_personaje,
     guardar_personaje,
@@ -1035,6 +1036,8 @@ def main():
 
         elif estado == "personajes":
 
+            musica.reproducir(musica.MUSICA_SELECCION)
+
             elegido = seleccionar_personaje(
                 pantalla,
                 reloj,
@@ -1073,6 +1076,8 @@ def main():
 
         elif estado == "menu":
 
+            musica.reproducir(musica.MUSICA_MENU)
+
             estado = menu(sprites_elegidos)
 
             if estado == "salir":
@@ -1096,6 +1101,8 @@ def main():
 
         elif estado in ("mapa", "mapa_victoria"):
 
+            musica.detener()
+
             # "mapa_victoria": se viene de terminar un nivel, el punto
             # se vuelve negro y salen los puntitos al siguiente
             estado = pantalla_mapa(
@@ -1110,6 +1117,8 @@ def main():
         # --------------------------------------------------
 
         elif estado == "jugar":
+
+            musica.detener()
 
             # Cara del personaje en uso (para el HUD de vidas)
             cabeza_elegida = None
@@ -1142,6 +1151,8 @@ def main():
         # --------------------------------------------------
 
         elif estado == "instrucciones":
+
+            musica.reproducir(musica.MUSICA_MENU)
 
             estado = pantalla_instrucciones(
                 pantalla,

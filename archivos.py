@@ -10,6 +10,8 @@ Persistencia de datos del juego (todo en archivos .txt al lado del juego).
                        que puntitos del camino ya paso (los negros)
     tienda.txt      -> existe si ya se entro a la tienda de San Telmo
                        (sirve para sacar los signos de exclamacion)
+    mision.txt      -> existe si ya se entro a la mision de San Telmo
+                       (sirve para sacar los signos de exclamacion)
     vidas_extra.txt -> vidas compradas en la tienda que todavia no se
                        usaron (se suman a las 3 de cada nivel)
 
@@ -27,6 +29,7 @@ RUTA_PERSONAJE = os.path.join(CARPETA, "personajes.txt")
 RUTA_BEBIDAS = os.path.join(CARPETA, "bebidas.txt")
 RUTA_NIVEL = os.path.join(CARPETA, "nivel.txt")
 RUTA_TIENDA = os.path.join(CARPETA, "tienda.txt")
+RUTA_MISION = os.path.join(CARPETA, "mision.txt")
 RUTA_VIDAS_EXTRA = os.path.join(CARPETA, "vidas_extra.txt")
 
 # Cantidad de niveles del mapa (la Boca -> ... -> la Boca)
@@ -212,6 +215,17 @@ def marcar_tienda_visitada():
     _escribir(RUTA_TIENDA, "1\n")
 
 
+def mision_visitada():
+    """True si ya se entro alguna vez a la mision de San Telmo."""
+
+    return _leer(RUTA_MISION) is not None
+
+
+def marcar_mision_visitada():
+
+    _escribir(RUTA_MISION, "1\n")
+
+
 def cargar_vidas_extra():
     """Vidas compradas en la tienda que todavia no se usaron."""
 
@@ -248,6 +262,7 @@ def nueva_vuelta():
     _borrar(RUTA_NIVEL)
     _borrar(RUTA_BEBIDAS)
     _borrar(RUTA_TIENDA)
+    _borrar(RUTA_MISION)
 
 
 # ==========================================================
@@ -266,4 +281,5 @@ def reiniciar_progreso():
     _borrar(RUTA_BEBIDAS)
     _borrar(RUTA_NIVEL)
     _borrar(RUTA_TIENDA)
+    _borrar(RUTA_MISION)
     _borrar(RUTA_VIDAS_EXTRA)

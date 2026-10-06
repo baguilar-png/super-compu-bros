@@ -17,6 +17,10 @@ personaje se mueve libremente por el mapa.
       exclamacion hasta que se entra por primera vez. Adentro se vende
       el chipa (10000 puntos = 1 vida): se ve el precio al pasar el mouse
       por encima y se compra con click. ESC para volver.
+    - Mision de San Telmo: aparece con la cara del chico (en gris hasta
+      llegar al nivel 3) y funciona igual que la tienda: signos de
+      exclamacion al desbloquearse, ENTER para entrar. Adentro hay una
+      pantalla negra que dice "MISION EN PROGRESO". ESC para volver.
 """
 
 import math
@@ -33,7 +37,9 @@ from archivos import (
     guardar_mapa,
     guardar_puntos,
     guardar_vidas_extra,
+    marcar_mision_visitada,
     marcar_tienda_visitada,
+    mision_visitada,
     nueva_vuelta,
     tienda_visitada
 )
@@ -176,6 +182,26 @@ DIBUJO_CORAZON = [
     "..BWB..",
     "...B...",
 ]
+
+# ==========================================================
+# MISION DE SAN TELMO
+# ==========================================================
+
+# Posicion sobre la imagen original del mapa (abajo del cartel de San Telmo)
+MISION_PUNTO = (1225, 762)
+
+# Se desbloquea al llegar a este nivel (el nivel 3 es el que toca jugar
+# cuando ya se completaron 2)
+NIVEL_MISION = 3
+
+MISION_CARPETA = os.path.join("assets", "mision")
+
+ESCALA_CARA_MISION = 2      # tamano de la cara en el mapa (el dibujo es chico)
+
+ESCALA_TEXTO_MISION = 5     # tamano de las letras de la pantalla negra
+
+TEXTO_MISION = "MISION EN PROGRESO"
+
 
 ESCALA_EXCLAMACION = 2      # tamano de los signos de exclamacion
 
@@ -472,11 +498,11 @@ def crear_globo(lineas, fuente, color_texto, color_borde, color_relleno,
 # IMAGENES DE LA TIENDA
 # ==========================================================
 
-def _cargar_recortada(nombre, escala=1):
-    """Carga una imagen de assets/tienda sin el borde transparente."""
+def _cargar_recortada(nombre, escala=1, carpeta=TIENDA_CARPETA):
+    """Carga una imagen de assets/<carpeta> sin el borde transparente."""
 
     imagen = pygame.image.load(
-        os.path.join(CARPETA, TIENDA_CARPETA, nombre)
+        os.path.join(CARPETA, carpeta, nombre)
     ).convert_alpha()
 
     recorte = imagen.subsurface(imagen.get_bounding_rect()).copy()
@@ -610,6 +636,27 @@ def _cargar_recursos():
     _recursos["globo_tienda_bloqueada"] = crear_globo(
         ["TIENDA", "NIVEL %d" % NIVEL_TIENDA],
         fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
+    )
+
+    # Mision de San Telmo: cara (gris si esta bloqueada) y sus globos
+    cara_mision = _cargar_recortada(
+        "icono_mision.png", ESCALA_CARA_MISION, MISION_CARPETA
+    )
+
+    _recursos["mision_cara"] = cara_mision
+    _recursos["mision_cara_gris"] = _en_gris(cara_mision)
+
+    _recursos["globo_mision"] = crear_globo(
+        ["MISION"], fuente, NEGRO, NEGRO, BLANCO
+    )
+
+    _recursos["globo_mision_bloqueada"] = crear_globo(
+        ["MISION", "NIVEL %d" % NIVEL_MISION],
+        fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
+    )
+
+    _recursos["texto_mision"] = FuentePixel(ESCALA_TEXTO_MISION).render(
+        TEXTO_MISION, True, BLANCO
     )
 
     # Cartel del final (sin cola, arriba en el centro de la pantalla)
@@ -853,6 +900,44 @@ def pantalla_tienda(pantalla, reloj, rec):
 
 
 # ==========================================================
+# PANTALLA DE LA MISION (por ahora solo el cartel)
+# ==========================================================
+
+def pantalla_mision(pantalla, reloj, rec):
+    """
+    Mision de San Telmo: pantalla negra con "MISION EN PROGRESO" y nada
+    mas. ESC vuelve al mapa.
+
+    Devuelve True si se cerro la ventana, False si se volvio con ESC.
+    """
+
+    texto = rec["texto_mision"]
+
+    while True:
+
+        reloj.tick(FPS)
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+
+                return True
+
+            if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+
+                return False
+
+        pantalla.fill(NEGRO)
+
+        pantalla.blit(
+            texto,
+            texto.get_rect(center=(ANCHO // 2, ALTO // 2))
+        )
+
+        pygame.display.flip()
+
+
+# ==========================================================
 # PANTALLA DEL MAPA
 # ==========================================================
 
@@ -884,6 +969,13 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
     tienda_vista = tienda_visitada()
 
     tx, ty = a_mapa(TIENDA_PUNTO)
+
+    # La mision de San Telmo se desbloquea al llegar al nivel 3
+    mision_abierta = completados >= NIVEL_MISION - 1
+
+    mision_vista = mision_visitada()
+
+    mx, my = a_mapa(MISION_PUNTO)
 
     t_reloj = 0.0
 
@@ -1038,6 +1130,27 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             and math.hypot(px - tx, py - ty) <= RADIO_ENTRADA
         )
 
+        parado_en_mision = (
+            mision_abierta
+            and not animando
+            and math.hypot(px - mx, py - my) <= RADIO_ENTRADA
+        )
+
+        if quiere_entrar and parado_en_mision:
+
+            mision_vista = True
+
+            marcar_mision_visitada()
+
+            guardar()
+
+            if pantalla_mision(pantalla, reloj, rec):
+
+                pygame.quit()
+                sys.exit()
+
+            continue
+
         if quiere_entrar and parado_en_tienda:
 
             tienda_vista = True
@@ -1175,6 +1288,35 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 )
             )
 
+        # ----- mision de San Telmo -----
+        cara_m = (
+            rec["mision_cara"] if mision_abierta else rec["mision_cara_gris"]
+        )
+
+        rect_cara_m = cara_m.get_rect(
+            center=(round(mx) - camara_x, round(my))
+        )
+
+        pantalla.blit(cara_m, rect_cara_m)
+
+        # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
+        if mision_abierta and not mision_vista:
+
+            excl = rec["tienda_exclamacion"]
+
+            rebote = round(
+                math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
+            )
+
+            pantalla.blit(
+                excl,
+                excl.get_rect(
+                    midbottom=(
+                        rect_cara_m.centerx, rect_cara_m.top - 2 + rebote
+                    )
+                )
+            )
+
         # ----- personaje -----
         if moviendose:
 
@@ -1235,6 +1377,23 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 rec["globo_tienda"]
                 if tienda_abierta
                 else rec["globo_tienda_bloqueada"]
+            )
+
+            rect_globo = globo.get_rect(
+                midbottom=(rect_personaje.centerx, rect_personaje.top - 2)
+            )
+
+            rect_globo.clamp_ip(pantalla.get_rect())
+
+            pantalla.blit(globo, rect_globo)
+
+        # ----- globo de la mision -----
+        if cerca is None and math.hypot(px - mx, py - my) <= RADIO_GLOBO:
+
+            globo = (
+                rec["globo_mision"]
+                if mision_abierta
+                else rec["globo_mision_bloqueada"]
             )
 
             rect_globo = globo.get_rect(
