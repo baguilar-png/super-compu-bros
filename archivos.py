@@ -14,6 +14,8 @@ Persistencia de datos del juego (todo en archivos .txt al lado del juego).
                        (sirve para sacar los signos de exclamacion)
     vidas_extra.txt -> vidas compradas en la tienda que todavia no se
                        usaron (se suman a las 3 de cada nivel)
+    ajustes.txt     -> volumen de la musica y de los efectos (0 a 100).
+                       NO se borra nunca: es una preferencia, no progreso
 
 Todo sobrevive a: ESC, cerrar la ventana y cerrar el programa.
 Todo se borra junto SOLO cuando el jugador pierde todas las vidas
@@ -31,6 +33,7 @@ RUTA_NIVEL = os.path.join(CARPETA, "nivel.txt")
 RUTA_TIENDA = os.path.join(CARPETA, "tienda.txt")
 RUTA_MISION = os.path.join(CARPETA, "mision.txt")
 RUTA_VIDAS_EXTRA = os.path.join(CARPETA, "vidas_extra.txt")
+RUTA_AJUSTES = os.path.join(CARPETA, "ajustes.txt")
 
 # Cantidad de niveles del mapa (la Boca -> ... -> la Boca)
 TOTAL_NIVELES = 15
@@ -263,6 +266,44 @@ def nueva_vuelta():
     _borrar(RUTA_BEBIDAS)
     _borrar(RUTA_TIENDA)
     _borrar(RUTA_MISION)
+
+
+# ==========================================================
+# AJUSTES (VOLUMEN)
+# ==========================================================
+
+VOLUMEN_POR_DEFECTO = 100
+
+
+def cargar_ajustes():
+    """
+    (volumen_musica, volumen_efectos), cada uno de 0 a 100.
+    Si no hay archivo (o esta roto) los dos van al maximo.
+    """
+
+    texto = _leer(RUTA_AJUSTES)
+
+    try:
+        musica, efectos = texto.split()[:2]
+
+        return (
+            max(0, min(100, int(musica))),
+            max(0, min(100, int(efectos)))
+        )
+
+    except (AttributeError, ValueError):
+        return VOLUMEN_POR_DEFECTO, VOLUMEN_POR_DEFECTO
+
+
+def guardar_ajustes(musica, efectos):
+
+    _escribir(
+        RUTA_AJUSTES,
+        "%d %d\n" % (
+            max(0, min(100, int(musica))),
+            max(0, min(100, int(efectos)))
+        )
+    )
 
 
 # ==========================================================

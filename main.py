@@ -5,13 +5,15 @@ import math
 
 from juego import jugar
 from mapa import pantalla_mapa
-from instrucciones import pantalla_instrucciones
+from tutorial import jugar_tutorial
 from eleccionPersonajes import seleccionar_personaje
 from intro import pantallas_intro
 from pixel_font import FuentePixel
 from fondo_menu import FondoMenuAnimado
 import transicion
 import musica
+import sonidos
+import pantalla_ajustes
 from archivos import (
     cargar_personaje,
     guardar_personaje,
@@ -397,6 +399,113 @@ personajes.append({
 
 
 # ==========================================================
+# ASPECTO HISTORICO DE CADA PERSONAJE
+#
+# No son personajes aparte: al elegir uno (BENJA, por ejemplo) aparece
+# una pantalla para elegir su aspecto, NORMAL o HISTORICO. El historico
+# vive en assets/personajes/<NOMBRE>/historico/ (sus poses de caminar,
+# salto, etc. se generan con herramientas/generar_historicos.py).
+# ==========================================================
+
+# Nombre con el que aparece cada aspecto historico (si no figura aca
+# se usa "<NOMBRE> HISTORICO")
+NOMBRES_HISTORICOS = {
+    "BENJA": "BENJUCHIS HISTORICO"
+}
+
+for personaje in personajes:
+
+    nombre = personaje["nombre"]
+
+    carpeta_historico = os.path.join(nombre, "historico")
+
+    sprites_historico = crear_sprites_personaje(
+        carpeta_historico,
+        "final.png",
+        "agachado.png",
+        "saltando.png",
+        "frame_1.png",
+        "frame_2.png",
+        "frame_3.png"
+    )
+
+    ruta_historico = os.path.join(
+        "assets", "personajes", nombre, "historico"
+    )
+
+    personaje["historico"] = {
+        "nombre": NOMBRES_HISTORICOS.get(
+            nombre,
+            nombre + " HISTORICO"
+        ),
+        "preview": sprites_historico["idle_der"],
+        "seleccion": cargar_sprite(
+            os.path.join(ruta_historico, "frente.png")
+        ),
+        "cabeza": cargar_cabeza(
+            os.path.join(ruta_historico, "cabeza.png")
+        ),
+        "sprites": sprites_historico
+    }
+
+
+def buscar_aspecto(sprites):
+    """
+    Dado el diccionario de sprites en uso, devuelve (personaje, aspecto)
+    donde aspecto es el propio personaje (normal) o su "historico".
+    Devuelve (None, None) si no se encuentra.
+    """
+
+    for personaje in personajes:
+
+        for aspecto in (personaje, personaje["historico"]):
+
+            if aspecto["sprites"] is sprites:
+
+                return personaje, aspecto
+
+    return None, None
+
+
+def nombre_para_guardar(sprites):
+    """Texto que se guarda en personajes.txt: BENJA o BENJA:HISTORICO."""
+
+    personaje, aspecto = buscar_aspecto(sprites)
+
+    if personaje is None:
+
+        return None
+
+    if aspecto is personaje:
+
+        return personaje["nombre"]
+
+    return personaje["nombre"] + ":HISTORICO"
+
+
+def sprites_guardados(texto):
+    """Operacion inversa de nombre_para_guardar (None si no existe)."""
+
+    if not texto:
+
+        return None
+
+    nombre, _, aspecto = texto.partition(":")
+
+    for personaje in personajes:
+
+        if personaje["nombre"] == nombre:
+
+            if aspecto == "HISTORICO":
+
+                return personaje["historico"]["sprites"]
+
+            return personaje["sprites"]
+
+    return None
+
+
+# ==========================================================
 # ENEMIGO GAGAMBA
 # ==========================================================
 
@@ -418,6 +527,8 @@ sprite_gagamba = pygame.transform.scale(
 for personaje in personajes:
 
     personaje["sprites"]["enemigo"] = sprite_gagamba
+
+    personaje["historico"]["sprites"]["enemigo"] = sprite_gagamba
 
 
 # ==========================================================
@@ -744,7 +855,15 @@ def dibujar_hotbar(superficie, sprites_elegidos):
 
         rect_slot = pygame.Rect(x_slot, y_slot, tam_slot, tam_slot)
 
-        es_elegido = personaje["sprites"] is sprites_elegidos
+        # El personaje cuenta como elegido con cualquiera de sus aspectos;
+        # en el slot se ve la cabeza del aspecto que esta en uso
+        aspecto = personaje
+
+        if personaje["historico"]["sprites"] is sprites_elegidos:
+
+            aspecto = personaje["historico"]
+
+        es_elegido = aspecto["sprites"] is sprites_elegidos
 
         # El cubo reemplaza al cuadrado gris
         rect_cubo = CUBO.get_rect(center=rect_slot.center)
@@ -762,7 +881,7 @@ def dibujar_hotbar(superficie, sprites_elegidos):
             )
 
         # Sprite del personaje (se achica si no entra en el slot)
-        sprite = personaje.get("cabeza", personaje["preview"])
+        sprite = aspecto.get("cabeza", aspecto["preview"])
 
         maximo = tam_slot - 12
 
@@ -821,6 +940,49 @@ BOTON_EXIT = BotonPixel(
     MARGEN_IZQ,
     435
 )
+
+
+# ==========================================================
+# ENGRANAJE DE AJUSTES (arriba a la derecha del menu)
+#
+# Se comporta como los otros botones: se pone blanco al apuntarlo y
+# "respira" al apretarlo; despues se abre la pantalla de ajustes
+# (volumen de la musica y de los efectos).
+# ==========================================================
+
+class BotonEngranaje(BotonPixel):
+
+    def __init__(self, derecha, arriba):
+
+        self.normal, self.blanco = pantalla_ajustes.crear_engranaje(3)
+
+        self.todo_blanco = hacer_todo_blanco(self.normal)
+
+        self.tamano = self.normal.get_size()
+
+        self.rect = pygame.Rect((0, 0), self.tamano)
+
+        self.rect.topright = (derecha, arriba)
+
+
+BOTON_AJUSTES = BotonEngranaje(ANCHO - 24, 24)
+
+# Titulo de la pantalla de ajustes
+fuente_titulo_ajustes = FuentePixel(5)
+
+
+def abrir_ajustes():
+    """Pantalla de ajustes encima del fondo animado del menu."""
+
+    pantalla_ajustes.abrir(
+        pantalla,
+        reloj,
+        lambda: FONDO_MENU.dibujar(pantalla),
+        fuente_titulo_ajustes,
+        fuente_media,
+        fuente_chica,
+        FPS
+    )
 
 
 def menu(sprites_elegidos=None):
@@ -885,8 +1047,25 @@ def menu(sprites_elegidos=None):
             t_click if accion_click == "salir" else None
         )
 
+        BOTON_AJUSTES.dibujar(
+            pantalla,
+            libre and BOTON_AJUSTES.rect.collidepoint(mouse_pos),
+            t_click if accion_click == "ajustes" else None
+        )
+
         # Terminaron los 2 respiros -> recién ahí se ejecuta la acción
         if t_click is not None and t_click >= DURACION_ANIMACION_MS:
+
+            if accion_click == "ajustes":
+
+                # Los ajustes se abren encima del menu y al volver
+                # el menu sigue como estaba
+                accion_click = None
+                inicio_click = None
+
+                abrir_ajustes()
+
+                continue
 
             return accion_click
 
@@ -921,6 +1100,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "jugar"
                     inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("click")
 
                     continue
 
@@ -928,6 +1108,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "instrucciones"
                     inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("click")
 
                     continue
 
@@ -935,6 +1116,15 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "salir"
                     inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("click")
+
+                    continue
+
+                if BOTON_AJUSTES.rect.collidepoint(evento.pos):
+
+                    accion_click = "ajustes"
+                    inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("click")
 
                     continue
 
@@ -957,6 +1147,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "jugar"
                     inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("click")
 
                     continue
 
@@ -1021,12 +1212,7 @@ def main():
 
             # Si hay un personaje guardado (personajes.txt) se va
             # directo al menu, si no se elige
-            guardado = cargar_personaje()
-
-            for personaje in personajes:
-
-                if personaje["nombre"] == guardado:
-                    sprites_elegidos = personaje["sprites"]
+            sprites_elegidos = sprites_guardados(cargar_personaje())
 
             estado = "menu" if sprites_elegidos is not None else "personajes"
 
@@ -1062,11 +1248,8 @@ def main():
 
                 sprites_elegidos = elegido
 
-                # Se guarda el personaje elegido en personajes.txt
-                for personaje in personajes:
-
-                    if personaje["sprites"] is elegido:
-                        guardar_personaje(personaje["nombre"])
+                # Se guarda el personaje (y su aspecto) en personajes.txt
+                guardar_personaje(nombre_para_guardar(elegido))
 
             estado = "menu"
 
@@ -1120,13 +1303,14 @@ def main():
 
             musica.detener()
 
-            # Cara del personaje en uso (para el HUD de vidas)
-            cabeza_elegida = None
+            # Cara del personaje (y aspecto) en uso, para el HUD de vidas
+            _, aspecto_en_uso = buscar_aspecto(sprites_elegidos)
 
-            for personaje in personajes:
-
-                if personaje["sprites"] is sprites_elegidos:
-                    cabeza_elegida = personaje.get("cabeza")
+            cabeza_elegida = (
+                aspecto_en_uso.get("cabeza")
+                if aspecto_en_uso is not None
+                else None
+            )
 
             # Nivel que toca jugar (los completados + 1)
             nivel_actual = cargar_mapa()[0] + 1
@@ -1152,14 +1336,13 @@ def main():
 
         elif estado == "instrucciones":
 
-            musica.reproducir(musica.MUSICA_MENU)
-
-            estado = pantalla_instrucciones(
+            # El boton INSTRUCCIONES lleva al nivel tutorial (con el
+            # personaje y aspecto elegidos). Al llegar a la bandera
+            # gris, o con ESC, se vuelve al menu.
+            estado = jugar_tutorial(
                 pantalla,
                 reloj,
-                ANCHO,
-                ALTO,
-                CELESTE,
+                sprites_elegidos or personajes[0]["sprites"],
                 fuente_grande,
                 fuente_media
             )

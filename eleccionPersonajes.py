@@ -80,6 +80,217 @@ def _flecha(superficie, centro, lado, hover):
     return pygame.Rect(cx - 40, cy - 45, 80, 90)
 
 
+# ==========================================================
+# ELEGIR ASPECTO (NORMAL / HISTORICO)
+#
+# Aparece al elegir un personaje. Cada personaje tiene su aspecto normal
+# (el propio diccionario del personaje) y, si tiene la clave "historico",
+# ese aspecto. Cada aspecto trae "nombre", "seleccion" (dibujo de frente)
+# y "sprites".
+# ==========================================================
+
+ESCALA_ASPECTO = 3.0
+
+ANCHO_TARJETA = 290
+ALTO_TARJETA = 330
+
+
+def _tarjeta(superficie, rect, elegida, hover):
+    """Panel semitransparente con borde blanco si esta elegida."""
+
+    panel = pygame.Surface(rect.size, pygame.SRCALPHA)
+
+    panel.fill((0, 0, 0, 150 if elegida else 95))
+
+    superficie.blit(panel, rect.topleft)
+
+    pygame.draw.rect(
+        superficie,
+        BLANCO if elegida else (GRIS_CLARO if hover else GRIS),
+        rect,
+        5 if elegida else 3,
+        border_radius=10
+    )
+
+
+def elegir_aspecto(
+    pantalla,
+    reloj,
+    ancho,
+    alto,
+    personaje,
+    fuente_media,
+    fondo=None
+):
+    """
+    Pantalla para elegir el aspecto del personaje.
+
+    Devuelve el aspecto elegido (el propio personaje si es el normal, o
+    personaje["historico"]), o None si se apreto ESC para volver.
+    """
+
+    aspectos = [personaje]
+
+    if personaje.get("historico") is not None:
+
+        aspectos.append(personaje["historico"])
+
+    # Sin aspectos extra no hay nada que elegir
+    if len(aspectos) == 1:
+
+        return personaje
+
+    etiquetas = ["NORMAL", personaje["historico"]["nombre"]]
+
+    fuente_titulo = FuentePixel(5)
+
+    fuente_nombre = FuentePixel(2)
+
+    cx = ancho // 2
+
+    separacion = ANCHO_TARJETA + 40
+
+    indice = 0
+
+    while True:
+
+        if fondo is not None:
+            pantalla.blit(fondo, (0, 0))
+        else:
+            pantalla.fill(CELESTE)
+
+        # Se oscurece el fondo para que se vea que es una pantalla aparte
+        velo = pygame.Surface((ancho, alto), pygame.SRCALPHA)
+
+        velo.fill((0, 0, 0, 120))
+
+        pantalla.blit(velo, (0, 0))
+
+        mouse_pos = pygame.mouse.get_pos()
+
+        # ----- titulo -----
+        titulo = fuente_titulo.render("ELEGIR ASPECTO", True, BLANCO)
+
+        pantalla.blit(titulo, titulo.get_rect(center=(cx, 60)))
+
+        nombre_personaje = fuente_media.render(
+            personaje["nombre"], True, BLANCO
+        )
+
+        pantalla.blit(
+            nombre_personaje,
+            nombre_personaje.get_rect(center=(cx, 112))
+        )
+
+        # ----- tarjetas -----
+        onda = math.sin(
+            2 * math.pi * pygame.time.get_ticks() / PERIODO_RESPIRO_MS
+        )
+
+        rects = []
+
+        for i, aspecto in enumerate(aspectos):
+
+            x = cx + (i - (len(aspectos) - 1) / 2) * separacion
+
+            rect = pygame.Rect(0, 0, ANCHO_TARJETA, ALTO_TARJETA)
+
+            rect.center = (round(x), 330)
+
+            rects.append(rect)
+
+            elegida = i == indice
+
+            _tarjeta(pantalla, rect, elegida, rect.collidepoint(mouse_pos))
+
+            base = aspecto.get("seleccion", aspecto["preview"])
+
+            # El elegido respira; el otro se queda quieto y mas oscuro
+            peso = 1.0 if elegida else 0.0
+
+            factor_x = ESCALA_ASPECTO * (1 - RESPIRO_ANCHO * onda * peso)
+
+            factor_y = ESCALA_ASPECTO * (1 + RESPIRO_ALTO * onda * peso)
+
+            sprite = pygame.transform.scale(
+                base,
+                (
+                    max(1, round(base.get_width() * factor_x)),
+                    max(1, round(base.get_height() * factor_y))
+                )
+            )
+
+            if not elegida:
+
+                sprite = _oscurecer(sprite, 150)
+
+            pantalla.blit(
+                sprite,
+                sprite.get_rect(midbottom=(rect.centerx, rect.bottom - 60))
+            )
+
+            etiqueta = fuente_nombre.render(
+                etiquetas[i],
+                True,
+                BLANCO if elegida else GRIS_CLARO
+            )
+
+            pantalla.blit(
+                etiqueta,
+                etiqueta.get_rect(center=(rect.centerx, rect.bottom - 28))
+            )
+
+        # ----- controles -----
+        controles = fuente_media.render(
+            "<  >   Elegir     ENTER   Confirmar     ESC   Volver",
+            True,
+            BLANCO
+        )
+
+        pantalla.blit(
+            controles,
+            controles.get_rect(center=(cx, alto - 40))
+        )
+
+        # ----- eventos -----
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+
+            if evento.type == pygame.KEYDOWN:
+
+                if evento.key in (pygame.K_LEFT, pygame.K_a):
+                    indice = (indice - 1) % len(aspectos)
+
+                elif evento.key in (pygame.K_RIGHT, pygame.K_d):
+                    indice = (indice + 1) % len(aspectos)
+
+                elif evento.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                    return aspectos[indice]
+
+                elif evento.key == pygame.K_ESCAPE:
+                    return None
+
+            if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+
+                for i, rect in enumerate(rects):
+
+                    if rect.collidepoint(evento.pos):
+
+                        # Click en el que ya estaba elegido: se confirma
+                        if i == indice:
+                            return aspectos[i]
+
+                        indice = i
+
+                        break
+
+        pygame.display.flip()
+        reloj.tick(FPS)
+
+
 def seleccionar_personaje(
     pantalla,
     reloj,
@@ -293,7 +504,20 @@ def seleccionar_personaje(
                     objetivo += 1
 
                 elif evento.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                    return personajes[indice_actual]["sprites"]
+
+                    # Al elegir un personaje se elige tambien su aspecto
+                    aspecto = elegir_aspecto(
+                        pantalla,
+                        reloj,
+                        ancho,
+                        alto,
+                        personajes[indice_actual],
+                        fuente_media,
+                        fondo
+                    )
+
+                    if aspecto is not None:
+                        return aspecto["sprites"]
 
                 elif evento.key == pygame.K_ESCAPE:
                     return None
@@ -315,7 +539,21 @@ def seleccionar_personaje(
                         if rect.collidepoint(evento.pos):
 
                             if i == indice_actual:
-                                return personajes[i]["sprites"]
+
+                                aspecto = elegir_aspecto(
+                                    pantalla,
+                                    reloj,
+                                    ancho,
+                                    alto,
+                                    personajes[i],
+                                    fuente_media,
+                                    fondo
+                                )
+
+                                if aspecto is not None:
+                                    return aspecto["sprites"]
+
+                                break
 
                             d = (i - objetivo + cantidad / 2) % cantidad - cantidad / 2
 
