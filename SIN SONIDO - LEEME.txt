@@ -1,0 +1,6 @@
+SUPER COMPU BROS - VERSION SIN SONIDO
+
+Es el mismo juego pero sin musica ni efectos de sonido (no trae los
+archivos de audio, por eso pesa mucho menos). Se juega igual.
+
+Para el acceso directo: doble click en "CREAR ACCESO DIRECTO.vbs".

@@ -54,6 +54,9 @@ _cache = {}
 def _mixer_listo():
     """Inicializa el mixer si hace falta. False si no hay audio."""
 
+    # VERSION SIN SONIDO: nunca hay audio
+    return False
+
     if pygame.mixer.get_init():
         return True
 

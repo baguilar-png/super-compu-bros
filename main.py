@@ -45,6 +45,12 @@ from archivos import (
 
 pygame.init()
 
+# VERSION SIN SONIDO: se apaga el audio
+try:
+    pygame.mixer.quit()
+except pygame.error:
+    pass
+
 
 # ==========================================================
 # CONFIGURACIÓN
