@@ -7,6 +7,8 @@ import pygame
 
 import transicion
 import sonidos
+import cheats
+import musica
 
 from pixel_font import FuentePixel
 
@@ -18,7 +20,9 @@ from archivos import (
     reiniciar_progreso,
     completar_nivel,
     cargar_vidas_extra,
-    gastar_vida_extra
+    gastar_vida_extra,
+    es_jefe,
+    es_interior
 )
 
 
@@ -152,7 +156,7 @@ GIRO_BOTELLA = 540
 
 
 # ----------------------------------------------------------
-# FANTASMA (solo en los niveles 10 a 15)
+# FANTASMA (del nivel 10 en adelante; no en las arenas de jefe)
 #
 # Entra por la derecha volando hacia el jugador, a la altura de su cuerpo y
 # un poquito levantado del piso: agacharse NO sirve, hay que saltar por
@@ -161,7 +165,7 @@ GIRO_BOTELLA = 540
 # ----------------------------------------------------------
 
 NIVEL_FANTASMA_DESDE = 10
-NIVEL_FANTASMA_HASTA = 15
+NIVEL_FANTASMA_HASTA = 30
 
 # Los dibujos son de 32 x 32: se agrandan al doble
 ESCALA_FANTASMA = 2
@@ -213,7 +217,7 @@ SALIDA_BORDE_FANTASMA = 0.25
 #   calle  -> los enemigos mas flojos: gagambas (niveles 1 a 7) o hinchas
 #   techos -> los de siempre (gagambas, hinchas, pelotas y fantasmas)
 #   cielo  -> los mas fuertes: pelotas en todos los niveles y fantasmas
-#             (niveles 10 a 15) el doble de seguido
+#             (del nivel 10 en adelante) el doble de seguido
 # ----------------------------------------------------------
 
 GAGAMBAS_CALLE = 8
@@ -351,7 +355,7 @@ class Jugador:
         # vuelan a la altura de ese techo.
         # El nivel arranca en la calle. Si el terreno no tiene calle (datos
         # viejos) se arranca en el primer techo.
-        if terreno is not None and terreno.escaleras:
+        if terreno is not None and terreno.tiene_calle:
 
             self.apoyo_y = terreno.calle_y
 
@@ -363,9 +367,10 @@ class Jugador:
 
             self.apoyo_y = SUELO_Y
 
-        # Posición inicial
+        # Posición inicial (casi siempre x = 100; el nivel 2 arranca en la
+        # puerta del Huergo)
         self.rect = pygame.Rect(
-            100,
+            terreno.inicio_x if terreno is not None else 100,
             self.apoyo_y - alto,
             ancho,
             alto
@@ -854,7 +859,7 @@ class Jugador:
         )
 
         self.rect.right = min(
-            NIVEL_ANCHO,
+            self.terreno.ancho if self.terreno is not None else NIVEL_ANCHO,
             self.rect.right
         )
 
@@ -1306,14 +1311,26 @@ def cargar_sprites_items():
 
 def crear_items(nivel=1, terreno=None):
 
+    # Las arenas de jefe estan vacias: sin bebidas
+    if es_jefe(nivel):
+
+        return []
+
     sprites = cargar_sprites_items()
+
+    # Adentro del Huergo no hay techos ni cielo: solo las bebidas del piso
+    interior = terreno is not None and terreno.interior
 
     # Las bebidas que ya se recogieron en una partida anterior
     # (bebidas.txt) no vuelven a aparecer
     recogidas = cargar_bebidas()
 
+    if interior:
+
+        lugares = []
+
     # Sin terreno (piso plano): las posiciones de siempre
-    if terreno is None:
+    elif terreno is None:
 
         lugares = [
             (tipo, x, altura, SUELO_Y, x)
@@ -1334,7 +1351,7 @@ def crear_items(nivel=1, terreno=None):
         ]
 
     # La calle y el cielo tienen sus propias bebidas (ids "c0", "s0", ...)
-    if terreno is not None and terreno.escaleras:
+    if terreno is not None and terreno.tiene_calle:
 
         for i, (tipo, x, altura, y) in enumerate(
             terreno.posiciones_items_calle(ITEMS_CALLE)
@@ -1556,7 +1573,11 @@ def crear_enemigos(sprite, nivel=1, terreno=None, ocupados=None):
     el tramo que usa un hincha (`ocupados`, ver crear_lanzadores).
     """
 
-    if nivel > NIVEL_ULTIMO_GAGAMBA:
+    if (
+        nivel > NIVEL_ULTIMO_GAGAMBA
+        or es_jefe(nivel)
+        or es_interior(nivel)
+    ):
 
         return []
 
@@ -1602,7 +1623,13 @@ def crear_enemigos(sprite, nivel=1, terreno=None, ocupados=None):
 def crear_enemigos_calle(sprite, nivel, terreno):
     """Gagambas de la calle (niveles 1 a 7): los enemigos mas flojos."""
 
-    if nivel > NIVEL_ULTIMO_GAGAMBA or terreno is None or not terreno.escaleras:
+    if (
+        nivel > NIVEL_ULTIMO_GAGAMBA
+        or es_jefe(nivel)
+        or es_interior(nivel)
+        or terreno is None
+        or not terreno.escaleras
+    ):
 
         return []
 
@@ -2129,6 +2156,10 @@ class HinchaLanzador:
         # Espera antes de poder tirar la primera botella
         self.espera = random.uniform(0.8, ESPERA_LANZADOR_MAX)
 
+        # Cuanto mas tarda en cargar la lata (1 = normal). En el castillo
+        # del nivel 30 es mas lento (ver jefes.py)
+        self.factor_carga = 1.0
+
         self.aplastado = False
 
         self.tiempo_aplastado = 0.0
@@ -2267,7 +2298,7 @@ class HinchaLanzador:
         # ----- lanzamiento -----
         elif self.estado == "pose1":
 
-            if self.tiempo_estado >= TIEMPO_POSE_1:
+            if self.tiempo_estado >= TIEMPO_POSE_1 * self.factor_carga:
 
                 self.estado = "pose2"
 
@@ -2275,7 +2306,7 @@ class HinchaLanzador:
 
         elif self.estado == "pose2":
 
-            if self.tiempo_estado >= TIEMPO_POSE_2:
+            if self.tiempo_estado >= TIEMPO_POSE_2 * self.factor_carga:
 
                 self.estado = "pose3"
 
@@ -2302,7 +2333,7 @@ class HinchaLanzador:
                 self.espera = random.uniform(
                     ESPERA_LANZADOR_MIN,
                     ESPERA_LANZADOR_MAX
-                )
+                ) * self.factor_carga
 
                 # Sigue caminando para donde estaba mirando
                 self.vel_x = (
@@ -2406,7 +2437,7 @@ def crear_lanzadores(nivel, terreno=None):
     (x_desde, x_hasta)}, para que los gagambas no se pongan encima.
     """
 
-    if nivel < NIVEL_LANZADORES:
+    if nivel < NIVEL_LANZADORES or es_jefe(nivel) or es_interior(nivel):
 
         return [], {}
 
@@ -2463,6 +2494,8 @@ def crear_lanzadores_calle(nivel, terreno):
 
     if (
         nivel <= NIVEL_ULTIMO_GAGAMBA
+        or es_jefe(nivel)
+        or es_interior(nivel)
         or terreno is None
         or not terreno.escaleras
     ):
@@ -2675,7 +2708,7 @@ def resolver_pelotas(jugador, pelotas, bottom_anterior):
 
 
 # ==========================================================
-# FANTASMA (niveles 10 a 15)
+# FANTASMA (del nivel 10 en adelante)
 #
 #   - Vuela de derecha a izquierda, flotando un poco, a la altura del
 #     cuerpo del jugador y levantado del piso: agacharse no lo evita, hay
@@ -3062,11 +3095,24 @@ def objetivo_camara_y(jugador):
 
         objetivo = apoyo - PIES_NUBE_PANTALLA
 
-    if not jugador.en_suelo and jugador.vel_y > VELOCIDAD_CAIDA_CAMARA:
+    # Solo si se esta cayendo MAS ABAJO del piso donde estaba (se cayo de un
+    # techo o de una nube). En la bajada de un salto comun la camara queda
+    # quieta: antes se movia y volvia en cada salto.
+    if cayendo_a_otro_piso(jugador):
 
         objetivo = max(objetivo, jugador.rect.bottom - PIES_CAIDA_PANTALLA)
 
     return objetivo
+
+
+def cayendo_a_otro_piso(jugador):
+    """True si cae rapido y ya paso mas abajo del ultimo piso que piso."""
+
+    return (
+        not jugador.en_suelo
+        and jugador.vel_y > VELOCIDAD_CAIDA_CAMARA
+        and jugador.rect.bottom > jugador.apoyo_y + 4
+    )
 
 
 def actualizar_camara_y(camara_y, jugador, dt):
@@ -3076,7 +3122,7 @@ def actualizar_camara_y(camara_y, jugador, dt):
 
     ritmo = SUAVIZADO_CAMARA
 
-    if not jugador.en_suelo and jugador.vel_y > VELOCIDAD_CAIDA_CAMARA:
+    if cayendo_a_otro_piso(jugador):
 
         ritmo *= 2.5
 
@@ -3471,21 +3517,27 @@ def dibujar_aviso(
 # JUGAR
 # ==========================================================
 
+# La bandera del final de los niveles (se saco; True para volver a ponerla)
+MOSTRAR_BANDERA_META = False
+
+
 def dibujar_meta(pantalla, terreno, camara_x, camara_y):
     """
     La meta: un mastil dorado con una bandera. Es alto: se ve desde la calle
     y desde los techos.
     """
 
-    x = META_X - camara_x
+    meta_x = terreno.meta_x
+
+    x = meta_x - camara_x
 
     if x < -60 or x > ANCHO + 60:
 
         return
 
-    base = terreno.calle_y if terreno.escaleras else terreno.techo_en(META_X)
+    base = terreno.calle_y if terreno.escaleras else terreno.techo_en(meta_x)
 
-    punta = terreno.techo_en(META_X) - 100
+    punta = terreno.techo_en(meta_x) - 100
 
     pygame.draw.rect(
         pantalla,
@@ -3512,6 +3564,48 @@ def dibujar_meta(pantalla, terreno, camara_x, camara_y):
     )
 
 
+# ==========================================================
+# CARTEL DE DONDE ESTAS (al empezar cada nivel)
+# ==========================================================
+
+DURACION_CARTEL_LUGAR = 3.5
+
+
+def nombre_del_lugar(nivel):
+    """("SAN TELMO", "BUENOS AIRES") segun el nivel (sale de mapa.py)."""
+
+    from mapa import NIVELES_BUENOS_AIRES, NIVELES
+
+    if not 1 <= nivel <= len(NIVELES):
+        return None, None
+    nombre = NIVELES[nivel - 1][0]
+    zona = "BUENOS AIRES" if nivel <= len(NIVELES_BUENOS_AIRES) else "CONURBANO BONAERENSE"
+    return nombre, zona
+
+
+def dibujar_cartel_lugar(pantalla, fuente_media, t, titulo, subtitulo=None, y=150):
+    """Cartel amarillo (con el texto chico abajo) que aparece y se va."""
+
+    if t >= DURACION_CARTEL_LUGAR or not titulo:
+        return
+    alfa = int(255 * max(0.0, min(1.0, t / 0.4, (DURACION_CARTEL_LUGAR - t) / 0.6)))
+    fuente_chica = type(fuente_media)(2)
+    for fuente, texto, yy, color in (
+        (fuente_media, titulo, y, (255, 220, 40)),
+        (fuente_chica, subtitulo, y + 40, (255, 255, 255)),
+    ):
+        if not texto:
+            continue
+        imagen = fuente.render(texto, True, color).copy()
+        sombra = fuente.render(texto, True, (0, 0, 0)).copy()
+        imagen.set_alpha(alfa)
+        sombra.set_alpha(alfa)
+        rect = imagen.get_rect(center=(ANCHO // 2, yy))
+        for dx, dy in ((-3, 0), (3, 0), (0, -3), (0, 3)):
+            pantalla.blit(sombra, rect.move(dx, dy))
+        pantalla.blit(imagen, rect)
+
+
 def jugar(
     pantalla,
     reloj,
@@ -3521,6 +3615,25 @@ def jugar(
     cabeza=None,
     nivel=1
 ):
+
+    # Niveles de jefe (15 y 30): los maneja jefes.py (el 30 es el castillo
+    # de Lord Teichi, con lava y la pelea final)
+    if es_jefe(nivel):
+
+        from jefes import jugar_jefe
+
+        return jugar_jefe(
+            pantalla,
+            reloj,
+            sprites,
+            fuente_grande,
+            fuente_media,
+            cabeza,
+            nivel
+        )
+
+    # Cancion del nivel (de dia o de noche, ver musica.cancion_de_nivel)
+    musica.reproducir_cancion(musica.cancion_de_nivel(nivel))
 
     # Los tres pisos del nivel (ver terreno.py): la calle, los techos de los
     # edificios y, arriba de todo, las nubes del cielo. Las nubes son
@@ -3571,7 +3684,7 @@ def jugar(
         ANCHO,
         ALTO,
         SUELO_Y,
-        NIVEL_ANCHO,
+        terreno.ancho if terreno.interior else NIVEL_ANCHO,
         CELESTE,
         VERDE_SUELO,
         terreno
@@ -3584,9 +3697,11 @@ def jugar(
 
     espera_pelota = random.uniform(ESPERA_PELOTA_MIN, ESPERA_PELOTA_MAX)
 
-    # Fantasmas (solo en los niveles 10 a 15)
+    # Fantasmas (del nivel 10 en adelante; las arenas de jefe estan vacias)
     hay_fantasmas = (
         NIVEL_FANTASMA_DESDE <= nivel <= NIVEL_FANTASMA_HASTA
+        and not es_jefe(nivel)
+        and not es_interior(nivel)
     )
 
     fantasmas = []
@@ -3624,6 +3739,10 @@ def jugar(
             )
 
 
+    # Cartel de donde estas (como en el castillo de Teichi)
+    cartel_lugar, cartel_zona = nombre_del_lugar(nivel)
+    tiempo_lugar = 0.0
+
     while True:
 
         # ==================================================
@@ -3639,6 +3758,8 @@ def jugar(
             dt,
             0.05
         )
+
+        tiempo_lugar += dt
 
 
         # ==================================================
@@ -3659,6 +3780,30 @@ def jugar(
             ):
 
                 return "menu"
+
+            # F10: menu de trucos (vidas, puntos, saltear niveles)
+            if (
+                evento.type == pygame.KEYDOWN
+                and evento.key == cheats.TECLA
+            ):
+
+                truco = cheats.menu_cheats(pantalla, reloj, vidas, nivel)
+
+                vidas = truco["vidas"]
+
+                puntos = truco["puntos"]
+
+                if truco["accion"] == "saltear":
+
+                    cheats.saltear_nivel(nivel)
+
+                    return "mapa_victoria"
+
+                if truco["accion"] is not None:
+
+                    cheats.ir_al_nivel(truco["accion"][1])
+
+                    return "mapa"
 
 
         # ==================================================
@@ -3741,7 +3886,7 @@ def jugar(
                 0,
                 min(
                     jugador.rect.centerx - ANCHO // 2,
-                    NIVEL_ANCHO - ANCHO
+                    terreno.ancho - ANCHO
                 )
             )
 
@@ -3797,7 +3942,7 @@ def jugar(
 
 
         # ==================================================
-        # FANTASMAS (niveles 10 a 15)
+        # FANTASMAS (del nivel 10 en adelante)
         # ==================================================
 
         if hay_fantasmas:
@@ -3806,7 +3951,7 @@ def jugar(
                 0,
                 min(
                     jugador.rect.centerx - ANCHO // 2,
-                    NIVEL_ANCHO - ANCHO
+                    terreno.ancho - ANCHO
                 )
             )
 
@@ -3993,7 +4138,10 @@ def jugar(
 
         if murio:
 
-            sonidos.reproducir("golpe")
+            # La cancion del nivel se pausa (sigue donde quedo al volver)
+            musica.pausar()
+
+            sonidos.reproducir("perder_vida")
 
             vidas -= 1
 
@@ -4011,7 +4159,7 @@ def jugar(
                     jugador.rect.centerx
                     - ANCHO // 2,
 
-                    NIVEL_ANCHO
+                    terreno.ancho
                     - ANCHO
                 )
             )
@@ -4037,6 +4185,8 @@ def jugar(
             # ----------------------------------------------
 
             if vidas <= 0:
+
+                musica.detener()
 
                 # Sin vidas: recien ahi se borra todo (puntos.txt,
                 # personajes.txt y bebidas.txt) y se vuelve a la
@@ -4082,6 +4232,9 @@ def jugar(
             transicion.cerrar_circulo(pantalla, reloj)
 
             transicion.abrir_circulo()
+
+            # Vuelve el nivel: la cancion sigue desde donde se pauso
+            musica.reanudar()
 
 
             # ----------------------------------------------
@@ -4162,7 +4315,7 @@ def jugar(
 
             if item.tipo == "heineken":
 
-                sonidos.reproducir("heineken")
+                sonidos.reproducir("cerveza")
 
                 vidas += 1
 
@@ -4172,7 +4325,7 @@ def jugar(
 
             else:
 
-                sonidos.reproducir("guinness")
+                sonidos.reproducir("cerveza")
 
                 puntos += PUNTOS_GUINNESS
 
@@ -4208,13 +4361,13 @@ def jugar(
         # META
         # ==================================================
 
-        if jugador.rect.x >= META_X:
+        if jugador.rect.x >= terreno.meta_x:
 
             # Nivel terminado: queda anotado y se vuelve al mapa, donde
             # el punto se vuelve negro y aparece el camino al siguiente
             completar_nivel(nivel)
 
-            sonidos.reproducir("meta")
+            sonidos.reproducir("nivel_completo")
 
             return "mapa_victoria"
 
@@ -4229,7 +4382,7 @@ def jugar(
                 jugador.rect.centerx
                 - ANCHO // 2,
 
-                NIVEL_ANCHO
+                terreno.ancho
                 - ANCHO
             )
         )
@@ -4258,7 +4411,11 @@ def jugar(
         # META
         # ==================================================
 
-        dibujar_meta(pantalla, terreno, camara_x, cam_y)
+        # (La bandera de la meta ya no se dibuja: el nivel termina igual al
+        # llegar al final. Solo el tutorial tiene bandera.)
+        if MOSTRAR_BANDERA_META:
+
+            dibujar_meta(pantalla, terreno, camara_x, cam_y)
 
 
         # ==================================================
@@ -4492,6 +4649,10 @@ def jugar(
             texto_nivel,
             rect_nivel
         )
+
+
+        # Cartel de donde estas
+        dibujar_cartel_lugar(pantalla, fuente_media, tiempo_lugar, cartel_lugar, cartel_zona)
 
 
         # ==================================================

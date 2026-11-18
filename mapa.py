@@ -1,26 +1,42 @@
 """
-Mapa de Buenos Aires (estilo mapa de Super Mario Bros 3).
+Mapas del juego (estilo mapa de Super Mario Bros 3).
 
-Hay 15 niveles, puntos que arrancan en La Boca y terminan en La Boca.
+Hay 30 niveles en DOS mapas de 15 niveles cada uno:
+
+    - Mapa 1: Buenos Aires (niveles 1 a 15). Arranca en el Instituto Huergo
+      y termina en La Boca, con el jefe en La Bombonera (nivel 15).
+    - Mapa 2: el conurbano (niveles 16 a 30). Arranca en Moron y termina en
+      Burzaco, con el jefe final (nivel 30).
+
+Al terminar el jefe del nivel 15 el circulo se cierra y el personaje
+aparece en Moron, en el mapa nuevo. Al terminar el nivel 30 se termina
+el juego.
+
 La imagen ocupa toda la pantalla (la camara sigue al personaje) y el
 personaje se mueve libremente por el mapa.
 
-    - Punto blanco con borde azul: el nivel que toca jugar.
+    - Punto blanco con borde azul: el nivel que toca jugar (con borde
+      rojo si es un jefe).
     - Punto negro: nivel completado o todavia bloqueado.
     - Al llegar a un punto aparece un globo de texto con el nivel (en gris
       si todavia esta bloqueado).
     - Al terminar un nivel el punto se vuelve negro y salen puntitos que
       guian hacia el proximo; se ponen negros cuando se pasa por encima.
     - Parado sobre el punto del nivel actual, ENTER (o ESPACIO) lo juega.
+    - Tienda y mision de San Telmo: solo estan en el mapa 1.
     - Tienda de San Telmo: aparece con la cara de la tienda (en gris hasta
       llegar al nivel 5). Al desbloquearla salen dos signos de
       exclamacion hasta que se entra por primera vez. Adentro se vende
       el chipa (10000 puntos = 1 vida): se ve el precio al pasar el mouse
       por encima y se compra con click. ESC para volver.
-    - Mision de San Telmo: aparece con la cara del chico (en gris hasta
-      llegar al nivel 3) y funciona igual que la tienda: signos de
+    - Mision de Iki (San Telmo): aparece con la cara de Iki (en gris
+      hasta llegar al nivel 3) y funciona igual que la tienda: signos de
       exclamacion al desbloquearse, ENTER para entrar. Adentro hay una
-      pantalla negra que dice "MISION EN PROGRESO". ESC para volver.
+      pantalla negra con dos botones: ENTRAR A LA MISION (el recuerdo de
+      Bolivar, ver escenas_carlitos.py) y SALIR.
+    - Carlitos: despues de la llamada del nivel 8 aparece su cara en el
+      mapa 1. ENTER sobre el muestra el reencuentro con Iki y despues
+      desaparece (se escapa otra vez).
 """
 
 import math
@@ -29,8 +45,18 @@ import sys
 
 import pygame
 
+import cheats
+import sonidos
+import transicion
+from escenas_carlitos import recuerdo_bolivar, reencuentro_carlitos
 from archivos import (
+    CARLITOS_ENCONTRADO,
+    CARLITOS_ESCAPO,
+    cargar_carlitos,
+    guardar_carlitos,
+    NIVELES_POR_MAPA,
     TOTAL_NIVELES,
+    es_jefe,
     cargar_mapa,
     cargar_puntos,
     cargar_vidas_extra,
@@ -38,6 +64,8 @@ from archivos import (
     guardar_puntos,
     guardar_vidas_extra,
     marcar_mision_visitada,
+    marcar_mision_completada,
+    mision_completada,
     marcar_tienda_visitada,
     mision_visitada,
     nueva_vuelta,
@@ -62,18 +90,24 @@ NEGRO = (0, 0, 0)
 AZUL = (20, 90, 255)
 GRIS_CLARO = (175, 175, 175)
 GRIS_OSCURO = (60, 60, 60)
+ROJO = (215, 40, 40)
 
-# La imagen del mapa (1659 x 948) se escala al ALTO de la ventana: llena
-# toda la pantalla sin deformarse. Como es mas ancha que la ventana, la
-# camara se desplaza de costado siguiendo al personaje.
-MAPA_ARCHIVO = os.path.join("assets", "fondos", "mapa_buenos_aires.png")
+# Cada imagen de mapa se escala al ALTO de la ventana: llena toda la pantalla
+# sin deformarse. Como es mas ancha que la ventana, la camara se desplaza de
+# costado siguiendo al personaje.
+# (archivo, ancho y alto de la imagen original)
+MAPAS_IMAGEN = [
+    (os.path.join("assets", "fondos", "mapa_buenos_aires.png"), 1659, 948),
+    (os.path.join("assets", "fondos", "mapa_conurbano.png"), 1977, 795),
+]
 
-MAPA_ANCHO_ORIGINAL = 1659
-MAPA_ALTO_ORIGINAL = 948
+# Escala y ancho (ya escalado) de cada mapa
+ESCALAS = [ALTO / alto for _, _, alto in MAPAS_IMAGEN]
 
-ESCALA_MAPA = ALTO / MAPA_ALTO_ORIGINAL
-
-MAPA_ANCHO = round(MAPA_ANCHO_ORIGINAL * ESCALA_MAPA)
+MAPAS_ANCHO = [
+    round(ancho * escala)
+    for (_, ancho, _), escala in zip(MAPAS_IMAGEN, ESCALAS)
+]
 
 # Movimiento y animaciones
 VELOCIDAD_MAPA = 170        # pixeles por segundo
@@ -97,17 +131,20 @@ ESPERA_ANTES = 0.5          # quieto antes de empezar
 PARPADEO_TOTAL = 0.9        # el punto parpadea y queda negro
 PARPADEO_CADA = 0.15
 PERIODO_PUNTITO = 0.05      # un puntito nuevo cada tanto
+ESPERA_CAMBIO_MAPA = 0.9    # quieto despues de un jefe, antes de cambiar de mapa
 
 
 # ==========================================================
-# NIVELES (x, y sobre la imagen original del mapa)
+# NIVELES (x, y sobre la imagen original de cada mapa)
 #
-# Sale de La Boca, da toda la vuelta por la ciudad y vuelve a
-# La Boca (la Bombonera).
+# MAPA 1 (Buenos Aires): sale del Instituto Huergo, da toda la vuelta por
+# la ciudad y termina en La Boca (la Bombonera, el jefe).
+# MAPA 2 (conurbano): sale de Moron, cruza el oeste y el sur del Gran
+# Buenos Aires y termina en Burzaco (el jefe final).
 # ==========================================================
 
-NIVELES = [
-    ("LA BOCA",         (1420, 800)),
+NIVELES_BUENOS_AIRES = [
+    ("INSTITUTO HUERGO", (1130, 700)),
     ("SAN TELMO",       (1245, 650)),
     ("PUERTO MADERO",   (1085, 455)),
     ("PLAZA DE MAYO",   (925, 420)),
@@ -126,8 +163,8 @@ NIVELES = [
 
 # Curvas intermedias del camino entre un nivel y el siguiente
 # (TRAMOS[i] va del nivel i al nivel i + 1)
-TRAMOS = [
-    [(1330, 730)],
+TRAMOS_BUENOS_AIRES = [
+    [],
     [(1190, 590), (1120, 500)],
     [(1000, 425)],
     [(870, 360)],
@@ -143,15 +180,66 @@ TRAMOS = [
     [(1300, 905), (1540, 905)],
 ]
 
+# Los puntos van un poco arriba del nombre de cada localidad (el nombre
+# esta escrito en la imagen)
+NIVELES_CONURBANO = [
+    ("MORON",                 (62, 110)),
+    ("RAMOS MEJIA",           (245, 108)),
+    ("LINIERS",               (380, 74)),
+    ("VILLA LUGANO",          (485, 168)),
+    ("AVELLANEDA",            (820, 133)),
+    ("LANUS",                 (725, 285)),
+    ("WILDE",                 (945, 281)),
+    ("BERNAL",                (1052, 308)),
+    ("QUILMES",               (1148, 351)),
+    ("BERAZATEGUI",           (1268, 495)),
+    ("FLORENCIO VARELA",      (1100, 612)),
+    ("SAN FRANCISCO SOLANO",  (982, 533)),
+    ("CLAYPOLE",              (892, 633)),
+    ("ADROGUE",               (755, 620)),
+    ("BURZACO",               (740, 738)),
+]
+
+TRAMOS_CONURBANO = [
+    [],
+    [],
+    [(440, 125)],
+    [(650, 162)],
+    [(785, 215)],
+    [(830, 300)],
+    [],
+    [],
+    [(1215, 425)],
+    [(1190, 560)],
+    [(1040, 568)],
+    [(930, 580)],
+    [(820, 640)],
+    [(748, 690)],
+]
+
+# Los 30 niveles seguidos (el nivel n es NIVELES[n - 1])
+NIVELES = NIVELES_BUENOS_AIRES + NIVELES_CONURBANO
+
+# Lo de cada mapa: [mapa 1, mapa 2]
+NIVELES_POR_MUNDO = [NIVELES_BUENOS_AIRES, NIVELES_CONURBANO]
+
+TRAMOS_POR_MUNDO = [TRAMOS_BUENOS_AIRES, TRAMOS_CONURBANO]
+
 assert len(NIVELES) == TOTAL_NIVELES
-assert len(TRAMOS) == TOTAL_NIVELES - 1
+assert len(NIVELES_POR_MUNDO) == len(TRAMOS_POR_MUNDO) == len(MAPAS_IMAGEN)
+
+for _niveles, _tramos in zip(NIVELES_POR_MUNDO, TRAMOS_POR_MUNDO):
+
+    assert len(_niveles) == NIVELES_POR_MAPA
+    assert len(_tramos) == NIVELES_POR_MAPA - 1
 
 
 # ==========================================================
 # TIENDA DE SAN TELMO
 # ==========================================================
 
-# Posicion sobre la imagen original del mapa (al lado del nivel de San Telmo)
+# Posicion sobre la imagen original del mapa 1 (al lado del nivel de San
+# Telmo). La tienda y la mision solo estan en el mapa de Buenos Aires.
 TIENDA_PUNTO = (1160, 655)
 
 # Se desbloquea al llegar a este nivel (el nivel 5 es el que toca jugar
@@ -200,7 +288,27 @@ ESCALA_CARA_MISION = 2      # tamano de la cara en el mapa (el dibujo es chico)
 
 ESCALA_TEXTO_MISION = 5     # tamano de las letras de la pantalla negra
 
-TEXTO_MISION = "MISION EN PROGRESO"
+TEXTO_MISION = "MISION DE IKI"
+
+BOTONES_MISION = ["ENTRAR A LA MISION", "SALIR"]
+
+ESCALA_CARA_MISION_GRANDE = 8   # la cara de Iki en la pantalla negra
+
+
+# Vidas con las que arranca cada nivel (sin las compradas). Es la misma que
+# VIDAS_INICIALES de juego.py; el menu de trucos (F10) las muestra sumadas.
+VIDAS_POR_NIVEL = 3
+
+
+# ==========================================================
+# CARLITOS (el perro) EN EL MAPA 1
+# ==========================================================
+
+# Posicion sobre la imagen original del mapa 1 (en Palermo, que es donde
+# lo vio el Compu Bro que llama y donde Iki dice que anda)
+CARLITOS_PUNTO = (235, 700)
+
+ESCALA_CARA_CARLITOS = 2
 
 
 ESCALA_EXCLAMACION = 2      # tamano de los signos de exclamacion
@@ -268,26 +376,31 @@ def crear_punto(dibujo, color_borde, color_relleno):
 # CAMINO DE PUNTITOS (solo es una guia, no limita el movimiento)
 # ==========================================================
 
-def a_mapa(punto):
-    """Pasa un punto de la imagen original a coordenadas del mapa."""
-
-    return (punto[0] * ESCALA_MAPA, punto[1] * ESCALA_MAPA)
-
-
-def crear_puntitos():
+def a_mapa(punto, mundo=0):
     """
-    Puntitos que guian de un nivel al siguiente.
+    Pasa un punto de la imagen original del mapa `mundo` (0 = Buenos Aires,
+    1 = conurbano) a coordenadas del mapa ya escalado.
+    """
+
+    return (punto[0] * ESCALAS[mundo], punto[1] * ESCALAS[mundo])
+
+
+def crear_puntitos(mundo=0):
+    """
+    Puntitos que guian de un nivel al siguiente en el mapa `mundo`.
     Devuelve una lista por tramo: [[(x, y), ...], ...]
     """
 
     tramos = []
 
-    for i in range(TOTAL_NIVELES - 1):
+    niveles = NIVELES_POR_MUNDO[mundo]
+
+    for i in range(NIVELES_POR_MAPA - 1):
 
         vertices = (
-            [a_mapa(NIVELES[i][1])]
-            + [a_mapa(c) for c in TRAMOS[i]]
-            + [a_mapa(NIVELES[i + 1][1])]
+            [a_mapa(niveles[i][1], mundo)]
+            + [a_mapa(c, mundo) for c in TRAMOS_POR_MUNDO[mundo][i]]
+            + [a_mapa(niveles[i + 1][1], mundo)]
         )
 
         # Distancia acumulada del camino de este tramo
@@ -517,6 +630,43 @@ def _cargar_recortada(nombre, escala=1, carpeta=TIENDA_CARPETA):
     return recorte
 
 
+def _cara_tienda():
+    """
+    Cara del Paraguashop para el mapa, del mismo tamano que la de Iki:
+    se sacan los puntitos sueltos que tiene el dibujo alrededor, se recorta
+    la cara y se agranda con la misma escala que la de Iki.
+    """
+
+    imagen = pygame.image.load(
+        os.path.join(CARPETA, TIENDA_CARPETA, "icono_tienda.png")
+    ).convert_alpha()
+
+    ancho, alto = imagen.get_size()
+    limpia = pygame.Surface((ancho, alto), pygame.SRCALPHA)
+
+    for y in range(alto):
+        for x in range(ancho):
+            color = imagen.get_at((x, y))
+            if not color[3]:
+                continue
+            vecinos = 0
+            for dx in (-1, 0, 1):
+                for dy in (-1, 0, 1):
+                    if (dx or dy) and 0 <= x + dx < ancho and 0 <= y + dy < alto:
+                        if imagen.get_at((x + dx, y + dy))[3]:
+                            vecinos += 1
+            # Un pixel con menos de 2 vecinos es un puntito suelto
+            if vecinos >= 2:
+                limpia.set_at((x, y), color)
+
+    recorte = limpia.subsurface(limpia.get_bounding_rect()).copy()
+
+    return pygame.transform.scale(
+        recorte,
+        (recorte.get_width() * ESCALA_CARA_MISION, recorte.get_height() * ESCALA_CARA_MISION)
+    )
+
+
 def _en_gris(imagen):
     """La misma imagen en gris (para la tienda todavia bloqueada)."""
 
@@ -552,21 +702,25 @@ def _cargar_recursos():
 
         return _recursos
 
-    imagen = pygame.image.load(
-        os.path.join(CARPETA, MAPA_ARCHIVO)
-    ).convert()
+    _recursos["mapas"] = []
 
-    _recursos["mapa"] = pygame.transform.smoothscale(
-        imagen,
-        (MAPA_ANCHO, ALTO)
-    )
+    for (archivo, _, _), ancho_mapa in zip(MAPAS_IMAGEN, MAPAS_ANCHO):
+
+        imagen = pygame.image.load(os.path.join(CARPETA, archivo)).convert()
+
+        _recursos["mapas"].append(
+            pygame.transform.smoothscale(imagen, (ancho_mapa, ALTO))
+        )
 
     _recursos["nivel_blanco"] = crear_punto(DIBUJO_NIVEL, AZUL, BLANCO)
     _recursos["nivel_negro"] = crear_punto(DIBUJO_NIVEL, NEGRO, NEGRO)
+
+    # Los jefes (niveles 15 y 30) tienen el borde rojo
+    _recursos["jefe_blanco"] = crear_punto(DIBUJO_NIVEL, ROJO, BLANCO)
     _recursos["puntito_blanco"] = crear_punto(DIBUJO_PUNTITO, AZUL, BLANCO)
     _recursos["puntito_negro"] = crear_punto(DIBUJO_PUNTITO, NEGRO, NEGRO)
 
-    _recursos["puntitos"] = crear_puntitos()
+    _recursos["puntitos"] = [crear_puntitos(m) for m in range(len(MAPAS_IMAGEN))]
 
     fuente = FuentePixel(2)
 
@@ -576,19 +730,24 @@ def _cargar_recursos():
 
     for n in range(1, TOTAL_NIVELES + 1):
 
-        texto = "NIVEL %d" % n
+        lineas = ["NIVEL %d" % n]
+
+        if es_jefe(n):
+
+            lineas.append("JEFE" if n < TOTAL_NIVELES else "JEFE FINAL")
 
         _recursos["globos"][(n, False)] = crear_globo(
-            [texto], fuente, NEGRO, NEGRO, BLANCO
+            lineas, fuente, NEGRO, NEGRO, BLANCO
         )
 
         _recursos["globos"][(n, True)] = crear_globo(
-            [texto], fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
+            lineas, fuente, GRIS_OSCURO, GRIS_OSCURO, GRIS_CLARO
         )
 
     # Tienda de San Telmo: cara (gris si esta bloqueada), exclamaciones,
     # stand de adentro y sus globos
-    cara = _cargar_recortada("icono_tienda.png")
+    # Del mismo tamano que la cara de Iki (la mision)
+    cara = _cara_tienda()
 
     _recursos["tienda_cara"] = cara
     _recursos["tienda_cara_gris"] = _en_gris(cara)
@@ -657,6 +816,23 @@ def _cargar_recursos():
 
     _recursos["texto_mision"] = FuentePixel(ESCALA_TEXTO_MISION).render(
         TEXTO_MISION, True, BLANCO
+    )
+
+    _recursos["mision_cara_grande"] = _cargar_recortada(
+        "icono_mision.png", ESCALA_CARA_MISION_GRANDE, MISION_CARPETA
+    )
+
+    _recursos["fuente_media"] = FuentePixel(3)
+    _recursos["fuente_grande"] = FuentePixel(6)
+
+    # Carlitos: su cara y su globo
+    _recursos["carlitos_cara"] = _cargar_recortada(
+        "cara.png", ESCALA_CARA_CARLITOS,
+        os.path.join("assets", "personajes", "CARLITOS")
+    )
+
+    _recursos["globo_carlitos"] = crear_globo(
+        ["CARLITOS"], fuente, NEGRO, NEGRO, BLANCO
     )
 
     # Cartel del final (sin cola, arriba en el centro de la pantalla)
@@ -900,22 +1076,50 @@ def pantalla_tienda(pantalla, reloj, rec):
 
 
 # ==========================================================
-# PANTALLA DE LA MISION (por ahora solo el cartel)
+# PANTALLA DE LA MISION DE IKI (ENTRAR A LA MISION / SALIR)
 # ==========================================================
+
+def _rects_botones_mision(fuente):
+    """Rectangulos de los botones, uno abajo del otro."""
+
+    rects = []
+    y = ALTO // 2 + 70
+
+    for texto in BOTONES_MISION:
+        ancho_texto, alto_texto = fuente.size(texto)
+        rect = pygame.Rect(0, 0, max(ancho_texto + 60, 420), alto_texto + 18)
+        rect.midtop = (ANCHO // 2, y)
+        rects.append(rect)
+        y += rect.height + 22
+
+    return rects
+
 
 def pantalla_mision(pantalla, reloj, rec):
     """
-    Mision de San Telmo: pantalla negra con "MISION EN PROGRESO" y nada
-    mas. ESC vuelve al mapa.
+    Mision de Iki: pantalla negra con la cara de Iki y dos botones.
 
-    Devuelve True si se cerro la ventana, False si se volvio con ESC.
+        ENTRAR A LA MISION -> el recuerdo de Bolivar (escenas_carlitos.py)
+        SALIR (o ESC)      -> vuelve al mapa
+
+    Se elige con el mouse o con las flechas y ENTER.
+    Devuelve True si se cerro la ventana, False si se vuelve al mapa sin
+    hacer la mision y "completada" si se hizo (la cara de Iki se va del mapa).
     """
 
     texto = rec["texto_mision"]
+    cara = rec["mision_cara_grande"]
+    fuente = rec["fuente_media"]
+    rects = _rects_botones_mision(fuente)
+
+    elegido = 0
+    t = 0.0
 
     while True:
 
-        reloj.tick(FPS)
+        t += reloj.tick(FPS) / 1000.0
+
+        apretado = None
 
         for evento in pygame.event.get():
 
@@ -923,16 +1127,91 @@ def pantalla_mision(pantalla, reloj, rec):
 
                 return True
 
-            if evento.type == pygame.KEYDOWN and evento.key == pygame.K_ESCAPE:
+            if evento.type == pygame.KEYDOWN:
+
+                if evento.key == pygame.K_ESCAPE:
+
+                    return False
+
+                if evento.key in (pygame.K_UP, pygame.K_w, pygame.K_LEFT, pygame.K_a):
+
+                    elegido = (elegido - 1) % len(rects)
+
+                if evento.key in (pygame.K_DOWN, pygame.K_s, pygame.K_RIGHT, pygame.K_d):
+
+                    elegido = (elegido + 1) % len(rects)
+
+                if evento.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_KP_ENTER):
+
+                    apretado = elegido
+
+            if evento.type == pygame.MOUSEMOTION:
+
+                for i, rect in enumerate(rects):
+
+                    if rect.collidepoint(evento.pos):
+
+                        elegido = i
+
+            if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
+
+                for i, rect in enumerate(rects):
+
+                    if rect.collidepoint(evento.pos):
+
+                        apretado = i
+
+        if apretado is not None:
+
+            sonidos.reproducir("boton")
+
+            if BOTONES_MISION[apretado] == "SALIR":
 
                 return False
 
+            # ENTRAR A LA MISION: el recuerdo, y despues de vuelta al mapa
+            transicion.cerrar_circulo(pantalla, reloj)
+            transicion.abrir_circulo()
+
+            recuerdo_bolivar(
+                pantalla, reloj, rec["fuente_grande"], rec["fuente_media"]
+            )
+
+            transicion.cerrar_circulo(pantalla, reloj)
+            transicion.abrir_circulo()
+
+            return "completada"
+
+        # --------------------------------------------------
+        # DIBUJAR
+        # --------------------------------------------------
+
         pantalla.fill(NEGRO)
 
-        pantalla.blit(
-            texto,
-            texto.get_rect(center=(ANCHO // 2, ALTO // 2))
-        )
+        flote = round(math.sin(t * 2.5) * 4)
+
+        pantalla.blit(cara, cara.get_rect(midbottom=(ANCHO // 2, ALTO // 2 - 60 + flote)))
+
+        pantalla.blit(texto, texto.get_rect(center=(ANCHO // 2, ALTO // 2 + 10)))
+
+        for i, (rect, nombre) in enumerate(zip(rects, BOTONES_MISION)):
+
+            activo = i == elegido
+
+            pygame.draw.rect(pantalla, BLANCO, rect.inflate(8, 8))
+            pygame.draw.rect(pantalla, (255, 214, 64) if activo else NEGRO, rect)
+
+            imagen = fuente.render(nombre, True, NEGRO if activo else BLANCO)
+            pantalla.blit(imagen, imagen.get_rect(center=(rect.centerx, rect.centery + 2)))
+
+            # Flechita al lado del elegido
+            if activo:
+                x = rect.left - 22 + round(math.sin(t * 8) * 3)
+                pygame.draw.polygon(
+                    pantalla,
+                    (255, 214, 64),
+                    [(x, rect.centery - 9), (x + 12, rect.centery), (x, rect.centery + 9)]
+                )
 
         pygame.display.flip()
 
@@ -945,15 +1224,14 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
     """
     Devuelve:
         "jugar" -> el jugador entro al nivel que tiene bajo los pies
-        "menu"  -> volvio al menu (ESC o termino los 15 niveles)
+        "menu"  -> volvio al menu (ESC o termino los 30 niveles)
 
     animar_completado=True se usa cuando se viene de terminar un nivel:
-    el punto se vuelve negro y salen los puntitos hacia el siguiente.
+    el punto se vuelve negro y salen los puntitos hacia el siguiente. Si
+    era el jefe del nivel 15, despues se cambia al mapa del conurbano.
     """
 
     rec = _cargar_recursos()
-
-    puntitos = rec["puntitos"]
 
     sprites_mapa = preparar_sprites_mapa(sprites)
 
@@ -963,42 +1241,67 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
     fin = completados >= TOTAL_NIVELES
 
-    # La tienda de San Telmo se desbloquea al llegar al nivel 5
+    # El nivel que toca jugar (o el ultimo, si ya esta todo completo)
+    actual = min(completados, TOTAL_NIVELES - 1)
+
+    # Despues de terminar un nivel el personaje esta parado en su punto
+    animando = animar_completado and completados > 0
+
+    # El mapa que se ve (0 = Buenos Aires, 1 = conurbano): el del nivel que
+    # toca jugar. Recien terminado el jefe de un mapa se sigue viendo ese
+    # mapa hasta que termina la animacion; ahi se cambia al siguiente.
+    if animando:
+
+        mundo = (completados - 1) // NIVELES_POR_MAPA
+
+    else:
+
+        mundo = actual // NIVELES_POR_MAPA
+
+    cambio_pendiente = animando and mundo != actual // NIVELES_POR_MAPA
+
+    t_cambio = 0.0
+
+    # La tienda y la mision de San Telmo se desbloquean al llegar al nivel 5
+    # y al 3 (y solo estan en el mapa 1)
     tienda_abierta = completados >= NIVEL_TIENDA - 1
 
     tienda_vista = tienda_visitada()
 
     tx, ty = a_mapa(TIENDA_PUNTO)
 
-    # La mision de San Telmo se desbloquea al llegar al nivel 3
     mision_abierta = completados >= NIVEL_MISION - 1
 
     mision_vista = mision_visitada()
 
+    # Ya terminada: la cara de Iki no aparece mas en el mapa
+    mision_completa = mision_completada()
+
     mx, my = a_mapa(MISION_PUNTO)
+
+    # Carlitos (despues de la llamada del nivel 8, hasta el reencuentro)
+    carlitos = cargar_carlitos()
+
+    kx, ky = a_mapa(CARLITOS_PUNTO)
+
+    t_aparece_carlitos = None
 
     t_reloj = 0.0
 
-    # El nivel que toca jugar (o el ultimo, si ya esta todo completo)
-    actual = min(completados, TOTAL_NIVELES - 1)
-
     # Posicion del personaje (coordenadas del mapa ya escalado)
-    if x_guardada is None or y_guardada is None:
+    if animando:
 
-        px, py = a_mapa(NIVELES[actual][1])
+        px, py = a_mapa(NIVELES[completados - 1][1], mundo)
+
+        tocados = set()
+
+    elif x_guardada is None or y_guardada is None:
+
+        px, py = a_mapa(NIVELES[actual][1], mundo)
 
     else:
 
-        px, py = a_mapa((x_guardada, y_guardada))
-
-    # Despues de terminar un nivel el personaje esta parado en su punto
-    animando = animar_completado and completados > 0
-
-    if animando:
-
-        px, py = a_mapa(NIVELES[completados - 1][1])
-
-        tocados = set()
+        px, py = a_mapa((x_guardada, y_guardada), mundo)
 
     t_anim = 0.0
 
@@ -1008,10 +1311,19 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
     def guardar():
 
+        # Si todavia se ve el mapa de un jefe ya terminado, la posicion no
+        # sirve para el mapa que viene: se guarda sin posicion y el personaje
+        # arranca en el primer nivel del mapa nuevo.
+        if mundo != actual // NIVELES_POR_MAPA:
+
+            guardar_mapa(completados, None, None, [])
+
+            return
+
         guardar_mapa(
             completados,
-            px / ESCALA_MAPA,
-            py / ESCALA_MAPA,
+            px / ESCALAS[mundo],
+            py / ESCALAS[mundo],
             tocados
         )
 
@@ -1020,6 +1332,20 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
         dt = min(reloj.tick(FPS) / 1000.0, 0.05)
 
         t_reloj += dt
+
+        # Lo que depende del mapa que se ve
+        puntitos = rec["puntitos"][mundo]
+
+        niveles_mapa = NIVELES_POR_MUNDO[mundo]
+
+        base = mundo * NIVELES_POR_MAPA
+
+        # Niveles completados de este mapa (0 a 15)
+        comp = max(0, min(NIVELES_POR_MAPA, completados - base))
+
+        ancho_mapa = MAPAS_ANCHO[mundo]
+
+        hay_tienda = mundo == 0
 
         # ==================================================
         # EVENTOS
@@ -1048,6 +1374,27 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
                     quiere_entrar = True
 
+                # F10: menu de trucos (vidas extra, puntos, saltear niveles)
+                if evento.key == cheats.TECLA and not animando:
+
+                    guardar()
+
+                    truco = cheats.menu_cheats(
+                        pantalla, reloj, None, None, vidas_base=VIDAS_POR_NIVEL
+                    )
+
+                    if truco["accion"] == "saltear":
+
+                        cheats.saltear_nivel(completados + 1)
+
+                        return "mapa_victoria"
+
+                    if truco["accion"] is not None:
+
+                        cheats.ir_al_nivel(truco["accion"][1])
+
+                        return "mapa"
+
         # ==================================================
         # ANIMACIÓN DE NIVEL COMPLETADO
         # ==================================================
@@ -1057,8 +1404,8 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             t_anim += dt
 
             nuevos = (
-                len(puntitos[completados - 1])
-                if completados - 1 < len(puntitos)
+                len(puntitos[comp - 1])
+                if 0 <= comp - 1 < len(puntitos)
                 else 0
             )
 
@@ -1067,12 +1414,42 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 animando = False
 
         # ==================================================
+        # CAMBIO DE MAPA (despues de un jefe)
+        # ==================================================
+
+        if cambio_pendiente and not animando:
+
+            t_cambio += dt
+
+            if t_cambio >= ESPERA_CAMBIO_MAPA:
+
+                transicion.cerrar_circulo(pantalla, reloj)
+
+                cambio_pendiente = False
+
+                mundo = actual // NIVELES_POR_MAPA
+
+                px, py = a_mapa(NIVELES[actual][1], mundo)
+
+                tocados = set()
+
+                mirando_derecha = True
+
+                guardar()
+
+                transicion.abrir_circulo()
+
+                continue
+
+        quieto = animando or cambio_pendiente
+
+        # ==================================================
         # MOVIMIENTO LIBRE
         # ==================================================
 
         moviendose = False
 
-        if not animando:
+        if not quieto:
 
             teclas = pygame.key.get_pressed()
 
@@ -1094,7 +1471,7 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 py += vy / largo_v * VELOCIDAD_MAPA * dt
 
                 # No se sale de la imagen
-                px = max(10, min(MAPA_ANCHO - 10, px))
+                px = max(10, min(ancho_mapa - 10, px))
                 py = max(30, min(ALTO - 6, py))
 
                 moviendose = True
@@ -1104,9 +1481,9 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                     mirando_derecha = vx > 0
 
             # Los puntitos del camino actual que se tocan se vuelven negros
-            if completados > 0 and completados - 1 < len(puntitos):
+            if comp > 0 and comp - 1 < len(puntitos):
 
-                for k, (x, y) in enumerate(puntitos[completados - 1]):
+                for k, (x, y) in enumerate(puntitos[comp - 1]):
 
                     if math.hypot(px - x, py - y) <= RADIO_PUNTITO:
 
@@ -1116,25 +1493,58 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
         # ENTRAR AL NIVEL / TERMINAR EL JUEGO
         # ==================================================
 
-        nx, ny = a_mapa(NIVELES[actual][1])
+        nx, ny = a_mapa(NIVELES[actual][1], mundo)
 
         parado_en_nivel = (
             not fin
-            and not animando
+            and not quieto
             and math.hypot(px - nx, py - ny) <= RADIO_ENTRADA
         )
 
         parado_en_tienda = (
-            tienda_abierta
-            and not animando
+            hay_tienda
+            and tienda_abierta
+            and not quieto
             and math.hypot(px - tx, py - ty) <= RADIO_ENTRADA
         )
 
+        hay_mision = hay_tienda and not mision_completa
+
         parado_en_mision = (
-            mision_abierta
-            and not animando
+            hay_mision
+            and mision_abierta
+            and not quieto
             and math.hypot(px - mx, py - my) <= RADIO_ENTRADA
         )
+
+        hay_carlitos = hay_tienda and carlitos == CARLITOS_ENCONTRADO
+
+        parado_en_carlitos = (
+            hay_carlitos
+            and not quieto
+            and math.hypot(px - kx, py - ky) <= RADIO_ENTRADA
+        )
+
+        if quiere_entrar and parado_en_carlitos:
+
+            guardar()
+
+            transicion.cerrar_circulo(pantalla, reloj)
+            transicion.abrir_circulo()
+
+            reencuentro_carlitos(
+                pantalla, reloj, rec["fuente_grande"], rec["fuente_media"]
+            )
+
+            # Se escapo: ya no esta en el mapa
+            carlitos = CARLITOS_ESCAPO
+
+            guardar_carlitos(carlitos)
+
+            transicion.cerrar_circulo(pantalla, reloj)
+            transicion.abrir_circulo()
+
+            continue
 
         if quiere_entrar and parado_en_mision:
 
@@ -1144,10 +1554,18 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
             guardar()
 
-            if pantalla_mision(pantalla, reloj, rec):
+            resultado = pantalla_mision(pantalla, reloj, rec)
+
+            if resultado is True:
 
                 pygame.quit()
                 sys.exit()
+
+            if resultado == "completada":
+
+                mision_completa = True
+
+                marcar_mision_completada()
 
             continue
 
@@ -1166,7 +1584,7 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
             continue
 
-        if quiere_entrar and not animando:
+        if quiere_entrar and not quieto:
 
             if fin:
 
@@ -1188,24 +1606,24 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
         # ==================================================
 
         camara_x = round(
-            max(0, min(MAPA_ANCHO - ANCHO, px - ANCHO // 2))
+            max(0, min(ancho_mapa - ANCHO, px - ANCHO // 2))
         )
 
         # ==================================================
         # DIBUJAR
         # ==================================================
 
-        pantalla.blit(rec["mapa"], (-camara_x, 0))
+        pantalla.blit(rec["mapas"][mundo], (-camara_x, 0))
 
         # ----- puntitos del camino -----
         for tramo, lista in enumerate(puntitos):
 
-            if tramo > completados - 1:
+            if tramo > comp - 1:
 
                 break
 
             # En el tramo recien desbloqueado salen de a uno
-            if animando and tramo == completados - 1:
+            if animando and tramo == comp - 1:
 
                 visibles = max(
                     0,
@@ -1221,7 +1639,7 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
             for k, (x, y) in enumerate(lista[:visibles]):
 
-                negro = tramo < completados - 1 or k in tocados
+                negro = tramo < comp - 1 or k in tocados
 
                 imagen = (
                     rec["puntito_negro"] if negro else rec["puntito_blanco"]
@@ -1233,14 +1651,14 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
                 )
 
         # ----- puntos de nivel -----
-        for i, (_, punto) in enumerate(NIVELES):
+        for i, (_, punto) in enumerate(niveles_mapa):
 
             # Solo el nivel que toca jugar esta en blanco; los completados
             # y los que todavia no se desbloquearon estan en negro
-            blanco = i == completados
+            blanco = i == comp
 
             # El que se acaba de completar parpadea y queda negro
-            if animando and i == completados - 1:
+            if animando and i == comp - 1:
 
                 t = t_anim - ESPERA_ANTES
 
@@ -1252,70 +1670,131 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
 
                     blanco = int(t / PARPADEO_CADA) % 2 == 1
 
-            imagen = (
-                rec["nivel_blanco"] if blanco else rec["nivel_negro"]
-            )
+            if blanco:
 
-            x, y = a_mapa(punto)
+                imagen = (
+                    rec["jefe_blanco"]
+                    if es_jefe(base + i + 1)
+                    else rec["nivel_blanco"]
+                )
+
+            else:
+
+                imagen = rec["nivel_negro"]
+
+            x, y = a_mapa(punto, mundo)
 
             pantalla.blit(
                 imagen,
                 imagen.get_rect(center=(round(x) - camara_x, round(y)))
             )
 
-        # ----- tienda de San Telmo -----
-        cara = (
-            rec["tienda_cara"] if tienda_abierta else rec["tienda_cara_gris"]
-        )
+        # ----- tienda de San Telmo (solo en el mapa 1) -----
+        if hay_tienda:
 
-        rect_cara = cara.get_rect(center=(round(tx) - camara_x, round(ty)))
-
-        pantalla.blit(cara, rect_cara)
-
-        # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
-        if tienda_abierta and not tienda_vista:
-
-            excl = rec["tienda_exclamacion"]
-
-            rebote = round(
-                math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
+            cara = (
+                rec["tienda_cara"] if tienda_abierta else rec["tienda_cara_gris"]
             )
 
-            pantalla.blit(
-                excl,
-                excl.get_rect(
-                    midbottom=(rect_cara.centerx, rect_cara.top - 2 + rebote)
+            rect_cara = cara.get_rect(center=(round(tx) - camara_x, round(ty)))
+
+            pantalla.blit(cara, rect_cara)
+
+            # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
+            if tienda_abierta and not tienda_vista:
+
+                excl = rec["tienda_exclamacion"]
+
+                rebote = round(
+                    math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
                 )
-            )
 
-        # ----- mision de San Telmo -----
-        cara_m = (
-            rec["mision_cara"] if mision_abierta else rec["mision_cara_gris"]
-        )
-
-        rect_cara_m = cara_m.get_rect(
-            center=(round(mx) - camara_x, round(my))
-        )
-
-        pantalla.blit(cara_m, rect_cara_m)
-
-        # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
-        if mision_abierta and not mision_vista:
-
-            excl = rec["tienda_exclamacion"]
-
-            rebote = round(
-                math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
-            )
-
-            pantalla.blit(
-                excl,
-                excl.get_rect(
-                    midbottom=(
-                        rect_cara_m.centerx, rect_cara_m.top - 2 + rebote
+                pantalla.blit(
+                    excl,
+                    excl.get_rect(
+                        midbottom=(rect_cara.centerx, rect_cara.top - 2 + rebote)
                     )
                 )
+
+        # ----- mision de Iki (hasta que se completa) -----
+        if hay_tienda and not mision_completa:
+
+            cara_m = (
+                rec["mision_cara"] if mision_abierta else rec["mision_cara_gris"]
             )
+
+            rect_cara_m = cara_m.get_rect(
+                center=(round(mx) - camara_x, round(my))
+            )
+
+            pantalla.blit(cara_m, rect_cara_m)
+
+            # Desbloqueada y todavia sin entrar: exclamaciones que rebotan
+            if mision_abierta and not mision_vista:
+
+                excl = rec["tienda_exclamacion"]
+
+                rebote = round(
+                    math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
+                )
+
+                pantalla.blit(
+                    excl,
+                    excl.get_rect(
+                        midbottom=(
+                            rect_cara_m.centerx, rect_cara_m.top - 2 + rebote
+                        )
+                    )
+                )
+
+        # ----- Carlitos (aparece con un saltito y exclamaciones) -----
+        if hay_tienda and carlitos == CARLITOS_ENCONTRADO and not animando:
+
+            if t_aparece_carlitos is None:
+
+                t_aparece_carlitos = t_reloj
+
+            crece = min(1.0, (t_reloj - t_aparece_carlitos) / 0.45)
+
+            # Se pasa un poco de tamano y vuelve (efecto "pop")
+            tamano = crece * (1 + 0.35 * math.sin(crece * math.pi))
+
+            cara_k = rec["carlitos_cara"]
+
+            if tamano > 0.05:
+
+                if tamano != 1.0:
+
+                    cara_k = pygame.transform.scale(
+                        cara_k,
+                        (
+                            max(1, round(cara_k.get_width() * tamano)),
+                            max(1, round(cara_k.get_height() * tamano))
+                        )
+                    )
+
+                saltito = round(abs(math.sin(t_reloj * 4)) * 3)
+
+                rect_k = cara_k.get_rect(
+                    center=(round(kx) - camara_x, round(ky) - saltito)
+                )
+
+                pantalla.blit(cara_k, rect_k)
+
+                if crece >= 1.0:
+
+                    excl = rec["tienda_exclamacion"]
+
+                    rebote = round(
+                        math.sin(t_reloj * VELOCIDAD_REBOTE) * REBOTE_EXCLAMACION
+                    )
+
+                    pantalla.blit(
+                        excl,
+                        excl.get_rect(
+                            midbottom=(rect_k.centerx, rect_k.top - 2 + rebote)
+                        )
+                    )
 
         # ----- personaje -----
         if moviendose:
@@ -1347,9 +1826,9 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
         # ----- globo con el nivel en el que se esta -----
         cerca = None
 
-        for i, (_, punto) in enumerate(NIVELES):
+        for i, (_, punto) in enumerate(niveles_mapa):
 
-            x, y = a_mapa(punto)
+            x, y = a_mapa(punto, mundo)
 
             if math.hypot(px - x, py - y) <= RADIO_GLOBO:
 
@@ -1358,9 +1837,9 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
         if cerca is not None:
 
             # Bloqueado: todavia no se llego a ese nivel
-            bloqueado = cerca > completados
+            bloqueado = cerca > comp
 
-            globo = rec["globos"][(cerca + 1, bloqueado)]
+            globo = rec["globos"][(base + cerca + 1, bloqueado)]
 
             rect_globo = globo.get_rect(
                 midbottom=(rect_personaje.centerx, rect_personaje.top - 2)
@@ -1371,7 +1850,10 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             pantalla.blit(globo, rect_globo)
 
         # ----- globo de la tienda -----
-        if cerca is None and math.hypot(px - tx, py - ty) <= RADIO_GLOBO:
+        if (
+            hay_tienda and cerca is None
+            and math.hypot(px - tx, py - ty) <= RADIO_GLOBO
+        ):
 
             globo = (
                 rec["globo_tienda"]
@@ -1388,13 +1870,33 @@ def pantalla_mapa(pantalla, reloj, sprites, animar_completado=False):
             pantalla.blit(globo, rect_globo)
 
         # ----- globo de la mision -----
-        if cerca is None and math.hypot(px - mx, py - my) <= RADIO_GLOBO:
+        if (
+            hay_tienda and not mision_completa and cerca is None
+            and math.hypot(px - mx, py - my) <= RADIO_GLOBO
+        ):
 
             globo = (
                 rec["globo_mision"]
                 if mision_abierta
                 else rec["globo_mision_bloqueada"]
             )
+
+            rect_globo = globo.get_rect(
+                midbottom=(rect_personaje.centerx, rect_personaje.top - 2)
+            )
+
+            rect_globo.clamp_ip(pantalla.get_rect())
+
+            pantalla.blit(globo, rect_globo)
+
+        # ----- globo de Carlitos -----
+        if (
+            hay_tienda and cerca is None
+            and carlitos == CARLITOS_ENCONTRADO
+            and math.hypot(px - kx, py - ky) <= RADIO_GLOBO
+        ):
+
+            globo = rec["globo_carlitos"]
 
             rect_globo = globo.get_rect(
                 midbottom=(rect_personaje.centerx, rect_personaje.top - 2)

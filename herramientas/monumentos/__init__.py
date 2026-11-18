@@ -26,6 +26,21 @@ MODULOS = [
     (13, "nivel13"),
     (14, "nivel14"),
     (15, "nivel15"),
+    (16, "nivel16"),
+    (17, "nivel17"),
+    (18, "nivel18"),
+    (19, "nivel19"),
+    (20, "nivel20"),
+    (21, "nivel21"),
+    (22, "nivel22"),
+    (23, "nivel23"),
+    (24, "nivel24"),
+    (25, "nivel25"),
+    (26, "nivel26"),
+    (27, "nivel27"),
+    (28, "nivel28"),
+    (29, "nivel29"),
+    (30, "nivel30"),
 ]
 
 

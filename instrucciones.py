@@ -26,6 +26,7 @@ def pantalla_instrucciones(pantalla, reloj, ancho, alto, color_fondo, fuente_gra
         "Llega a la bandera dorada para pasar",
         "MAPA: FLECHAS mueven, ENTER juega",
         "Esquiva a los enemigos rojos",
+        "JEFES: E agarra y tira (piedras y al jefe)",
         "ESC: volver al menu en cualquier momento",
     ]
 
@@ -37,7 +38,7 @@ def pantalla_instrucciones(pantalla, reloj, ancho, alto, color_fondo, fuente_gra
 
         for i, linea in enumerate(lineas):
             render = fuente_media.render(linea, True, NEGRO)
-            pantalla.blit(render, render.get_rect(center=(ancho // 2, 185 + i * 48)))
+            pantalla.blit(render, render.get_rect(center=(ancho // 2, 180 + i * 42)))
 
         mouse_pos = pygame.mouse.get_pos()
         color_boton = VERDE if boton_volver.collidepoint(mouse_pos) else GRIS

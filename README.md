@@ -5,6 +5,25 @@
 #   Bautista Dieguez
 ---
 
+## Acceso directo (Windows)
+
+Doble click en **`CREAR ACCESO DIRECTO.vbs`**: crea "SUPER COMPU BROS" (con
+el icono del juego) en la carpeta del juego y en el Escritorio. El acceso
+abre `Super Compu Bros.pyw`, que arranca el juego sin la ventana negra de la
+consola. Si moves la carpeta, volve a hacerle doble click.
+
+## Partidas
+
+Al tocar JUGAR aparecen **NUEVA PARTIDA** y **CARGAR PARTIDA**. Hay 6
+casillas; cada partida tiene nombre y contrasena (se pide para entrar) y en
+la casilla se ve el nivel en el que esta. Cada partida se guarda en
+`partidas/partida_N/`. Las cinematicas se ven una vez por partida: si perdes
+todas las vidas (o empezas una partida nueva) se vuelven a ver en su momento.
+El progreso de antes de las partidas pasa solo a la casilla 1 ("MI PARTIDA",
+sin contrasena).
+
+---
+
 ## Que trae esta version (fusion de tres versiones)
 
 * **Tres pisos apilados en cada nivel**: la **calle** (donde empezas, con los
@@ -12,10 +31,18 @@
   el **cielo** con nubes aleatorias, opcional y con premios. Se sube con
   escaleras y con saltos, y cuanto mas arriba, mas negro el cielo (ver
   "Tres pisos: calle, techos y cielo").
-* **Fondos pixel art** de los 15 niveles, con niveles del triple de largo y
+* **30 niveles en dos mapas**: del 1 al 15 por Buenos Aires (el nivel 1 es
+  **todo adentro del Instituto Luis A. Huergo**, mas corto y sin enemigos) y del 16 al 30 por el conurbano sur, de
+  **Moron a Burzaco**. Los niveles **15 y 30 son peleas contra jefe** (por ahora
+  arenas vacias). Ver "30 niveles, dos mapas y jefes".
+* **Fondos pixel art** de los 30 niveles, con niveles del triple de largo y
   en capas: a lo lejos se ven los monumentos del barrio de cada nivel (ver
   mas abajo).
-* **Mision de San Telmo** en el mapa (cara del chico, gris hasta el nivel 3;
+* **Niveles de dia y de noche**: dieciocho niveles son de dia, con el **reflejo
+  del sol** (rayos, brillo en los vidrios, destellos que titilan), y doce de
+  noche, con **luces de edificios, postes de luz, carteles de neon y luna**
+  (ver "De dia y de noche").
+* **Mision de San Telmo** en el mapa 1 (cara del chico, gris hasta el nivel 3;
   ENTER para entrar, ESC para volver). Por ahora solo muestra
   "MISION EN PROGRESO". Se guarda en `mision.txt`.
 * **Hinchas lanzadores** (desde el nivel 5): patrullan y tiran botellas de
@@ -28,7 +55,7 @@
 * **Pelotas mas lentas**: las pelotas de Benedetto y Belran (del nivel 8 en
   adelante) van a 1.25 veces la velocidad del personaje
   (`VELOCIDAD_PELOTA = VELOCIDAD_MOV * 1.25` en `juego.py`).
-* **Fantasma** (niveles 10 a 15): vuela hacia vos a la altura del cuerpo, un
+* **Fantasma** (niveles 10 a 29, no en los jefes): vuela hacia vos a la altura del cuerpo, un
   poco levantado del piso, asi que agacharse no sirve y hay que saltar. Si te
   toca no te saca vida, pero por 2 segundos desaparece todo menos el mapa y
   los bordes de la pantalla quedan grises (ver mas abajo). En el cielo
@@ -50,10 +77,81 @@
 
 ---
 
-## Fantasma (niveles 10 a 15)
+## 30 niveles, dos mapas y jefes
 
-* **Cuando aparece**: solo del nivel 10 al 15 (`NIVEL_FANTASMA_DESDE` y
-  `NIVEL_FANTASMA_HASTA` en `juego.py`). Entra por la derecha cada 3 a 6
+* **Mapa 1, Buenos Aires (niveles 1 a 15)**: el nivel 1 transcurre **adentro del
+  Instituto Luis A. Huergo**, el 2 arranca en su puerta de entrada y sigue por San Telmo, Puerto Madero, Plaza de Mayo... hasta La
+  Bombonera (jefe). Usa `assets/fondos/mapa_buenos_aires.png`. La tienda y la
+  mision de San Telmo estan solo en este mapa.
+* **Mapa 2, conurbano sur (niveles 16 a 30)**: arranca en **Moron** y baja por
+  Ramos Mejia, Liniers, Villa Lugano, Avellaneda, Lanus, Wilde, Bernal, Quilmes,
+  Berazategui, Florencio Varela, San Francisco Solano, Claypole y Adrogue hasta
+  **Burzaco** (jefe final). Usa `assets/fondos/mapa_conurbano.png`.
+* **Cambio de mapa**: al ganarle al jefe del 15 el punto parpadea, salen los
+  puntitos, la pantalla se cierra con el circulo y se abre el mapa del conurbano
+  con el personaje parado en Moron. Al ganar el nivel 30 aparece
+  "¡FELICITACIONES!" y con ENTER se vuelve al menu con el mapa y las bebidas
+  borrados (se empieza de nuevo desde el Huergo; puntos y personaje se
+  conservan).
+* **Los jefes** (nivel 15 en La Bombonera y nivel 30 en Burzaco) se marcan en
+  el mapa con un punto distinto y el globo dice "NIVEL 15 / JEFE" y "NIVEL 30 /
+  JEFE FINAL". **Por ahora son arenas vacias**: el nivel mide 1600 px (en vez
+  de 9600), sin enemigos, sin fantasma, sin bebidas, y la bandera esta al final
+  (a 100 px del borde derecho). Para armar la pelea de verdad hay que sacar
+  esas condiciones: `es_jefe(nivel)` en `archivos.py` (`NIVELES_JEFE = (15,
+  30)`) se usa en `juego.py` para dejar todo vacio, y el largo sale de
+  `ANCHO_ARENA` en `terreno.py` (el `_terreno.json` de un jefe tiene
+  `"ancho": 1600`; la bandera esta en `terreno.meta_x`).
+* **Nivel 1: Instituto Huergo, todo por dentro (nivel corto, plano y sin
+  enemigos)**. Es **mas chico que los demas**: mide 4800 px (la mitad de un
+  nivel normal) y tiene **un solo piso**: como estas adentro del colegio no hay
+  techos ni escaleras ni nubes a donde subir (las paredes llegan hasta el
+  cielorraso) y **no hay enemigos** (ni gagambas, ni hinchas, ni pelotas, ni
+  fantasmas); solo bebidas en el piso. Se camina por la planta baja: arranca en
+  el **taller mecanico** y sigue por pasillos con **aulas, el taller electrico,
+  casilleros, el laboratorio, ventanales altos, la biblioteca, la escalera,
+  preceptoria, un mural, otro taller y el salon de actos**; despues el
+  **vestibulo** (el nombre del colegio grabado en granito negro, "FUNDADO EN
+  1934", la bandera, la puerta de porteria y los tachos de colores de Escuelas
+  Verdes) y, justo antes de la bandera de meta, la **puerta de calle**: el
+  porton de rombos abierto y la calle de San Telmo a la vista. El piso es de
+  granito reconstituido (se vuelve de baldosas ocres en el umbral), el
+  cielorraso tiene su cornisa y tubos fluorescentes, y arriba de las puertas
+  hay ventanas altas y caños (con valvulas rojas). Los modulos estan en
+  `herramientas/interior_huergo.py`, el vestibulo, la salida, el piso y el
+  cielorraso en `herramientas/huergo_real.py` (`RUTA` es el recorrido; tiene que
+  sumar `ANCHO_INTERIOR`). En el juego: `es_interior(nivel)` en `archivos.py`
+  (`NIVELES_INTERIOR = (1,)`) apaga los enemigos en `juego.py`, y el
+  `_terreno.json` trae `"interior": true` y `"ancho": 4800` (`Terreno.interior`,
+  `Terreno.tiene_calle`; la bandera esta en `terreno.meta_x`). El colegio se
+  dibujo con lo que se sabe (el nombre, el 1934, los talleres y laboratorios, el
+  lema) y de memoria: el interior real es **aproximado**.
+* **Nivel 2: San Telmo, desde la puerta del Huergo**. El nivel arranca **parado
+  en la puerta de entrada del Instituto Huergo** (`"inicio_x"` en el
+  `_terreno.json`; `puerta="huergo"` en la configuracion), con la fachada de la
+  **entrada real (Peru 759)**, solo la estructura: la vidriera con un afiche
+  azul, el panel de **granito negro con "INSTITUTO INDUSTRIAL"** grabado, el
+  **porton de hierro de rombos** con su plaquita blanca y el escalon amarillo,
+  el panel con "LUIS A. HUERGO 759", la vidriera con estantes, la cornisa de
+  hormigon gris, la piedra beige con ventanitas con rejas y dos postes finitos
+  (uno blanco y otro negro). Adelante, la **vereda de baldosas ocres** con la
+  banda amarilla junto al cordon y baldosas grises con puntitos (termina donde
+  termina el lote). De ahi sigue por las calles de San Telmo. A lo lejos
+  estan los edificios de la zona (Facultad de Ingenieria, Otto Krause, el Museo
+  Historico Nacional, el Mercado, San Pedro Telmo y la Iglesia Rusa). La entrada
+  esta en `herramientas/huergo_real.py` (`fachada_entrada`, `vereda_entrada`).
+* Para agregar o mover un punto del mapa: `NIVELES_BUENOS_AIRES` y
+  `NIVELES_CONURBANO` en `mapa.py` (nombre y posicion sobre la imagen original),
+  y `TRAMOS_BUENOS_AIRES` / `TRAMOS_CONURBANO` (los puntos intermedios del
+  camino entre un nivel y el siguiente). `TOTAL_NIVELES = 30` y
+  `NIVELES_POR_MAPA = 15` estan en `archivos.py`.
+
+---
+
+## Fantasma (niveles 10 a 29)
+
+* **Cuando aparece**: del nivel 10 al 30 (`NIVEL_FANTASMA_DESDE` y
+  `NIVEL_FANTASMA_HASTA` en `juego.py`), menos en las arenas de jefe (15 y 30). Entra por la derecha cada 3 a 6
   segundos (`ESPERA_FANTASMA_MIN` / `ESPERA_FANTASMA_MAX`) y cruza la pantalla
   hacia la izquierda (`VELOCIDAD_FANTASMA`).
 * **Altura**: el borde de abajo vuela entre 14 y 24 px sobre el piso y ademas
@@ -153,11 +251,13 @@ el normal y, por ejemplo, "BENJUCHIS HISTORICO". Lo elegido se guarda en
 ## Tres pisos: calle, techos y cielo
 
 Cada nivel (9600 px de largo) tiene tres pisos apilados, y la camara sube y
-baja suave segun el piso donde estas parado (no se mueve cuando saltas):
+baja suave segun el piso donde estas parado (no se mueve cuando saltas). La
+excepcion es el nivel 1, adentro del Huergo: solo tiene el piso de abajo (el
+pasillo), no hay a donde subir:
 
 | Piso | Donde | Enemigos | Bebidas |
 |---|---|---|---|
-| **Calle** | abajo, ahi empezas; libre de punta a punta | los mas flojos: 8 gagambas (niveles 1 a 7) o 3 a 5 hinchas lanzadores (del 8 en adelante) | 6 (`ITEMS_CALLE`) |
+| **Calle** | abajo, ahi empezas; libre de punta a punta | los mas flojos: 8 gagambas (niveles 2 a 7) o 3 a 5 hinchas lanzadores (del 8 en adelante) | 6 (`ITEMS_CALLE`) |
 | **Techos y balcones** | en el medio (lo de siempre) | gagambas (hasta el nivel 7), hinchas, pelotas (del 8 en adelante) y fantasmas (10 a 15) | las de siempre |
 | **Cielo** | arriba, solo por nubes | los mas fuertes: pelotas en **todos** los niveles, mas seguido (`ESPERA_PELOTA_CIELO_*`), y fantasmas (10 a 15) el doble de seguido (`ESPERA_FANTASMA_CIELO_*`) | 6 premios (`ITEMS_CIELO`), sobre las nubes |
 
@@ -255,37 +355,108 @@ subiendo por las escaleras de la calle (ver arriba) y se puede volver a bajar.
 
 ---
 
-## Fondos pixel art de los 15 niveles (Buenos Aires)
+## Fondos pixel art de los 30 niveles
 
-Cada nivel es un barrio del mapa, dibujado en pixel art. **A lo lejos se ve
-lo que hay en cada zona**: los monumentos del barrio aparecen detras de los
-edificios (en el nivel 1, La Bombonera, Caminito y el Puente Transbordador)
-y se van acercando a medida que avanzas. **Ningun monumento se repite**
-(46 en total), salvo La Bombonera, que esta en La Boca (nivel 1) y en su
-propio nivel (el 15). Los niveles miden **el triple** de largo (9600 px) y
-tienen el triple de items y enemigos. Cada nivel arranca con un cartel
-"BIENVENIDOS A <barrio>" y termina con otro que indica el siguiente.
+Cada nivel es un barrio del mapa, dibujado en pixel art (los niveles 1 a 15 son
+Buenos Aires y los 16 a 30 el conurbano sur, de Moron a Burzaco). **A lo lejos
+se ve lo que hay en cada zona**: los monumentos del barrio aparecen detras de
+los edificios y se van acercando a medida que avanzas. **Ningun monumento se
+repite** (89 usados en total; el nivel 1 es por dentro del Huergo y no tiene
+monumentos de fondo, el 2 muestra la Facultad de Ingenieria, la escuela Otto
+Krause y el Museo Historico Nacional ademas de los de San Telmo, y en el nivel
+15, ya en La Boca, La Bombonera y Caminito). Los edificios de los barrios del conurbano
+estan dibujados de memoria, asi que son aproximados. Los niveles miden **el
+triple** de largo (9600 px) y tienen el triple de items y enemigos, salvo los
+jefes (1600 px, ver "30 niveles, dos mapas y jefes") y el nivel 1, por dentro
+del Huergo (4800 px, sin enemigos). Cada nivel arranca con un
+cartel "BIENVENIDOS A <barrio>" (el 1, adentro del Huergo, lleva el nombre del
+colegio) y termina con otro que indica el siguiente.
 
 | Nivel | Barrio | Monumentos |
 |---|---|---|
-| 1 | La Boca | La Bombonera, Caminito, Puente Transbordador Nicolas Avellaneda, Usina del Arte |
-| 2 | San Telmo | Mercado de San Telmo, Catedral Ortodoxa Rusa, Iglesia de San Pedro Gonzalez Telmo |
-| 3 | Puerto Madero | Puente de la Mujer, Fragata Sarmiento, Fuente de las Nereidas |
-| 4 | Plaza de Mayo | Casa Rosada, Piramide de Mayo, Cabildo, Catedral Metropolitana |
+| 1 | Instituto Huergo (por dentro) | ninguno: es un colegio por dentro (las paredes llegan hasta el cielorraso) |
+| 2 | San Telmo | Facultad de Ingenieria (UBA), Escuela Industrial Otto Krause, Mercado de San Telmo, Iglesia de San Pedro Gonzalez Telmo, Catedral Ortodoxa Rusa, Museo Historico Nacional |
+| 3 | Puerto Madero | Puente de la Mujer, Fragata ARA Presidente Sarmiento, Fuente de las Nereidas |
+| 4 | Plaza de Mayo | Casa Rosada, Piramide de Mayo, Cabildo de Buenos Aires, Catedral Metropolitana |
 | 5 | Retiro | Torre Monumental, Edificio Kavanagh, Estacion Retiro |
-| 6 | Recoleta | Floralis Generica, Cementerio de la Recoleta, Basilica del Pilar |
+| 6 | Recoleta | Floralis Generica, Cementerio de la Recoleta, Basilica Nuestra Senora del Pilar |
 | 7 | Barrio Norte | El Ateneo Grand Splendid, Palais de Glace, Facultad de Medicina |
-| 8 | Palermo | Planetario, Jardin Japones, Rosedal |
-| 9 | Abasto | Abasto Shopping, Monumento a Gardel, Casa Museo Gardel |
-| 10 | Once | Palacio de Aguas Corrientes, Estacion Once, Mausoleo de Rivadavia |
-| 11 | Congreso | Palacio del Congreso, Confiteria El Molino, Monumento a los Dos Congresos |
-| 12 | Obelisco | Obelisco, Teatro Colon, Teatro Gran Rex |
-| 13 | Monserrat | Palacio Barolo, Cafe Tortoni, Iglesia de San Ignacio |
-| 14 | Constitucion | Estacion Constitucion, Iglesia Claretiana, Autopista 25 de Mayo |
-| 15 | La Bombonera | La Bombonera, Puente Nicolas Avellaneda, Tren del Roca |
+| 8 | Palermo | Planetario Galileo Galilei, Jardin Japones, Rosedal de Palermo |
+| 9 | Abasto | Abasto Shopping, Monumento a Carlos Gardel, Casa Museo Carlos Gardel y mural |
+| 10 | Once | Palacio de Aguas Corrientes, Estacion Once de Septiembre, Mausoleo de Rivadavia |
+| 11 | Congreso | Palacio del Congreso de la Nacion, Confiteria El Molino, Monumento a los Dos Congresos |
+| 12 | Obelisco | Teatro Gran Rex, Obelisco, Teatro Colon |
+| 13 | Monserrat | Cafe Tortoni, Palacio Barolo, Iglesia de San Ignacio de Loyola |
+| 14 | Constitucion | Estacion Constitucion, Iglesia del Inmaculado Corazon de Maria, Autopista 25 de Mayo |
+| 15 | La Bombonera | La Bombonera, Caminito |
+| 16 | Moron | Catedral de Moron, Palacio Municipal de Moron, Museo Nacional de Aeronautica |
+| 17 | Ramos Mejia | Estacion Ramos Mejia, Casa de la Cultura, Plaza Bartolome Mitre |
+| 18 | Liniers | Estacion Liniers, Estadio Jose Amalfitani, Santuario de San Cayetano |
+| 19 | Villa Lugano | Autodromo Oscar y Juan Galvez, Monobloques de Villa Lugano, Reserva Ecologica Lago Lugano |
+| 20 | Avellaneda | Estadio Libertadores de America, El Cilindro de Avellaneda, Puente Nicolas Avellaneda |
+| 21 | Lanus | Estadio Ciudad de Lanus, Estacion Lanus, Palacio Municipal de Lanus |
+| 22 | Wilde | Estacion Wilde, Parroquia de Wilde, Plaza Wilde |
+| 23 | Bernal | Parroquia Maria Auxiliadora, Estacion Bernal, Universidad Nacional de Quilmes |
+| 24 | Quilmes | Catedral de Quilmes, Cerveceria Quilmes, Casa de Santa Coloma |
+| 25 | Berazategui | Cristalerias Rigolleau, Museo del Vidrio, Estacion Berazategui |
+| 26 | Florencio Varela | Hospital El Cruce, Universidad Nacional Arturo Jauretche, Estacion Florencio Varela |
+| 27 | San Francisco Solano | Parroquia San Francisco Solano, Estacion Solano, Plaza de Solano |
+| 28 | Claypole | Estacion Claypole, Parroquia de Claypole, Tanque de agua del ferrocarril |
+| 29 | Adrogue | Casa de Borges, La Cucaracha, Plaza Brown |
+| 30 | Burzaco | Primer Monumento a la Bandera, Estacion Burzaco |
 
-Los niveles van de la manana a la noche: del 12 en adelante atardece y en
-La Bombonera es de noche (con luces prendidas en las ventanas).
+Los dibujos del Puente Transbordador, la Usina del Arte y el Tren del Roca
+(de La Boca) siguen en `herramientas/monumentos/nivel15.py`, sin usar.
+
+### De dia y de noche
+
+| De dia (sol) | De noche (luna) |
+|---|---|
+| 1 Instituto Huergo (por dentro, con luz de ventanales), 2 San Telmo, 4 Plaza de Mayo, 5 Retiro, 7 Barrio Norte, 8 Palermo, 10 Once, 11 Congreso, 13 Monserrat, 16 Moron, 17 Ramos Mejia, 19 Villa Lugano, 20 Avellaneda, 22 Wilde, 24 Quilmes, 26 Florencio Varela, 28 Claypole, 29 Adrogue | 3 Puerto Madero, 6 Recoleta, 9 Abasto, 12 Obelisco, 14 Constitucion, 15 La Bombonera, 18 Liniers, 21 Lanus, 23 Bernal, 25 Berazategui, 27 San Francisco Solano, 30 Burzaco |
+
+**De dia, el reflejo del sol**
+
+* El sol del cielo tiene rayos y un resplandor grande, y se ve durante todo el
+  nivel (se va corriendo despacio hacia la izquierda con el parallax).
+* En el juego, el sol **suma luz por encima de todo el fondo** (le da a los
+  edificios y a las nubes) y suelta unos reflejos de lente chiquitos. Se
+  apaga cuando subis y el cielo se pone negro.
+* Los vidrios de las ventanas reflejan el sol: franjas diagonales de cielo y de
+  luz, y algunos ventanales brillan casi blancos. En los edificios de la calle,
+  del medio y de lejos. Las paredes tienen una linea de luz del lado del sol y
+  las siluetas lejanas un borde claro arriba.
+* Hay **destellos que titilan** (cruces de luz) sobre los vidrios que dan al sol,
+  y sobre la vereda y el asfalto, que tambien tiene rayitas de brillo.
+
+**De noche, luces en el fondo**
+
+* Las paredes se oscurecen y se prenden ventanas de varios colores (la
+  proporcion y los tonos cambian por barrio: calidas, frias, de neon o de
+  sodio) con un resplandor de un pixel alrededor.
+* **Postes de luz**: en la vereda hay el doble que de dia, y alumbran de
+  verdad: halo, cono de luz sobre la pared, charco en la vereda y reflejo largo
+  en el asfalto. En el juego suman luz y algunos **fallan a ratos**. Tambien
+  hay postes chicos en las azoteas y en las terrazas de los edificios del
+  fondo.
+* **Carteles de neon** en los edificios del fondo (sobre todo en Abasto y el
+  Obelisco), **luces rojas de aviso** en antenas y torres que prenden y apagan,
+  ventanitas encendidas en la ciudad lejana y **focos** que iluminan los
+  monumentos desde abajo.
+* La **luna** cambia de fase segun el barrio (llena, creciente o media), con su
+  resplandor, y las nubes se ven a la luz de la luna. El texto de arriba pasa a
+  blanco.
+
+`previsualizacion/dia_y_noche.png` muestra los 30 niveles juntos, marcados DIA o
+NOCHE (`python herramientas/hoja_dia_noche.py` la vuelve a armar).
+
+Todo esto sale de la configuracion de cada barrio (`herramientas/niveles_config.py`):
+con `sol` el nivel es de dia; con `luna` y `noche` es de noche (`luces` =
+ventanas prendidas, `paleta_luces`, `farola_luz` y `neon` ajustan el tono). Lo
+que se anima en el juego se guarda en `assets/niveles/nivel_NN_efectos.json`
+(si falta, el fondo se ve igual pero sin movimiento). Para cambiar un nivel de
+dia a noche o al reves alcanza con cambiar esas claves y volver a correr
+`python herramientas/generar_techos.py`. El HUD pasa a blanco en los niveles
+de `NIVELES_OSCUROS` (`fondos_nivel.py`).
 
 ### Como esta hecho
 
@@ -297,12 +468,14 @@ La Bombonera es de noche (con luces prendidas en las ventanas).
   camara sube, las capas lejanas suben mas despacio (cielo 0.08, lejos 0.30,
   medio 0.60, ciudad 1.0) y la oscuridad del cielo se dibuja encima.
 * `fondos_nivel.py` carga las imagenes de `assets/niveles/` y las dibuja en
-  `juego.py`. Si faltan `lejos` y `medio`, se dibujan igual el cielo y la
+  `juego.py`. Tambien anima las luces (destellos del sol, luz de los postes,
+  luces rojas, brillo del sol y de la luna) con `nivel_NN_efectos.json`. Si faltan `lejos` y `medio`, se dibujan igual el cielo y la
   ciudad; si falta alguna de las dos obligatorias, el juego usa un fondo
   simple con bloques grises para los edificios.
 * `assets/niveles/nivel_NN_cielo.png`, `_lejos.png`, `_medio.png`,
-  `_ciudad.png` y `_terreno.json`: capas y datos de cada nivel.
-  `assets/monumentos/*.png`: cada monumento suelto.
+  `_ciudad.png`, `_terreno.json` y `_efectos.json`: capas y datos de cada nivel.
+  `assets/monumentos/*.png`: cada monumento suelto (los 92 que hay dibujados;
+  el juego no los lee, son para mirarlos).
 * `previsualizacion/niveles/nivel_NN_techos.png` y `nivel_NN_calle.png`: vista
   previa de cada nivel (principio, medio y final) a la altura de los techos y
   de la calle. `previsualizacion/galeria_monumentos.png`:
@@ -314,8 +487,8 @@ Las imagenes se dibujan con codigo (no hay archivos fuente aparte). Hace
 falta `pip install pillow numpy`.
 
 ```
-python herramientas/generar_techos.py            # los 15 niveles (techos)
-python herramientas/generar_techos.py 4 12       # solo algunos
+python herramientas/generar_techos.py            # los 30 niveles (techos)
+python herramientas/generar_techos.py 4 12 30    # solo algunos
 python herramientas/generar_techos.py --vista    # + vistas previas en herramientas/vistas/
 python herramientas/galeria_monumentos.py        # hoja con todos los monumentos
 python herramientas/probar_nubes.py              # comprueba que todas las nubes se alcanzan
@@ -324,13 +497,25 @@ python herramientas/probar_nubes.py 3 8 -s 10    # solo esos niveles, 10 semilla
 
 * `herramientas/generar_techos.py`: arma el recorrido de edificios de cada
   nivel (alturas, balcones, fachadas, cartel de entrada y de salida), dibuja
-  las cuatro capas (con la calle, las escaleras y los faroles) y
-  escribe el `_terreno.json` (con `escaleras`). Verifica que cada
+  las cuatro capas (con la calle, las escaleras y los faroles, de dia con sol o
+  de noche con luces) y escribe el `_terreno.json` (con `escaleras`) y el
+  `_efectos.json`. Verifica que cada
   nivel tenga las escaleras bien repartidas. Cada nivel usa una semilla
   fija, asi que siempre sale el mismo resultado.
   Con `ESTILOS_EN_TIER`, `TRANSICIONES` y `PROPS_BARRIO` se cambia que
   fachadas van en cada altura, como se suceden los edificios y los objetos
   de las azoteas.
+* `herramientas/interior_huergo.py`: los modulos de pasillo del nivel 1
+  (`ESTILOS`: aula, taller mecanico y electrico, casilleros, biblioteca,
+  laboratorio, oficina, ventanal, escalera, salon de actos y mural), las luces
+  y las tres capas de atras (`capa_cielo`, `capa_lejos`, `capa_medio`, que casi no
+  se ven porque las paredes llegan hasta el cielorraso).
+* `herramientas/huergo_real.py`: el Huergo de verdad. La **entrada** del nivel 2
+  (`fachada_entrada`, `vereda_entrada`, hecha a partir de la foto: granito negro
+  con letras chicas grabadas, porton de rombos, vidrieras, cornisa, piedra
+  beige) y las piezas del **interior** del nivel 1: el recorrido (`RUTA`), el
+  vestibulo, la salida con el porton abierto, el piso de granito, el umbral, el
+  cielorraso y los tubos fluorescentes.
 * `herramientas/generar_niveles.py`: es la herramienta de antes (la calle
   con vereda). Sigue en la carpeta porque `generar_techos.py` usa sus
   funciones; si la corres, **pisa** las imagenes `_cielo` y `_ciudad` con la
@@ -340,5 +525,7 @@ python herramientas/probar_nubes.py 3 8 -s 10    # solo esos niveles, 10 semilla
 * `herramientas/monumentos/nivelNN.py`: el dibujo de cada monumento.
 * `herramientas/niveles_config.py`: como es cada barrio (cielo, colores,
   donde va cada monumento).
+* `herramientas/efectos_luz.py`: el reflejo del sol y las luces de la noche
+  (vidrios, ventanas prendidas, postes, neon, balizas).
 * `herramientas/edificios.py` y `herramientas/pixelart.py`: fachadas de
   relleno y las herramientas de dibujo.

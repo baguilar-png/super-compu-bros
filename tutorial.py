@@ -598,7 +598,7 @@ def jugar_tutorial(pantalla, reloj, sprites, fuente_grande, fuente_media):
 
         if reaparecer is None and jugador.rect.colliderect(rect_bandera):
 
-            sonidos.reproducir("meta")
+            sonidos.reproducir("nivel_completo")
 
             return "menu"
 

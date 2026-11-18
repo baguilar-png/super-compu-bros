@@ -1,0 +1,7 @@
+Cuadros del castillo de Lord Teichi (nivel 30, Burzaco)
+
+Las imagenes que se pongan en esta carpeta (.png, .jpg o .jpeg) aparecen
+colgadas en las paredes del castillo, con marco dorado, una atras de otra
+(cuando se terminan, se repiten). Tambien aparecen en la sala de Lord Teichi.
+
+Si la carpeta no tiene imagenes, los marcos muestran un signo "?".

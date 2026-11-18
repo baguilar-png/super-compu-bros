@@ -1,5 +1,11 @@
 """
-Animaciones de los personajes HISTORICOS.
+*** REEMPLAZADO por herramientas/generar_desde_bauto.py ***
+Ahora los sprites de los historicos y de Iki se arman con el molde de Bauto.
+Este script ya no se usa: si se corre sin --viejo no hace nada (para no
+pisar los sprites nuevos). Queda por si se quiere volver al metodo anterior.
+
+Animaciones de los personajes HISTORICOS (y de IKI, que tiene el mismo
+estilo de dibujo: 16 x 27).
 
 De cada historico solo hay una imagen: la pose quieta (16 x 27), que es
 `assets/personajes/<NOMBRE>/historico/final.png`. Este script arma el resto
@@ -15,6 +21,16 @@ y moviendolas, asi se mantiene el dibujo original pixel por pixel:
 Los tamanos de los lienzos son los mismos que los de los personajes
 normales, asi el juego los trata igual (misma caja de choque).
 
+IMPORTANTE: final.png tiene que mirar a la DERECHA, como todos los sprites
+del juego (las versiones que miran a la izquierda las arma el juego dando
+vuelta las imagenes). Si mira a la izquierda, el personaje camina "para
+atras".
+
+IKI: se parte de su dibujo `assets/personajes/IKI/iki frente.png` (que mira
+a la IZQUIERDA, por eso se da vuelta) y se guardan todas sus poses en
+`assets/personajes/IKI/` con los mismos nombres (final.png, frame_1.png...).
+Iki se rehace siempre (sus poses salen todas de ese dibujo).
+
 Si quedan ganas de redibujar alguna pose a mano, alcanza con reemplazar el
 PNG: por defecto el script NO pisa los archivos que ya existen.
 
@@ -23,6 +39,7 @@ Uso (hace falta `pip install pillow numpy`):
     python herramientas/generar_historicos.py            # solo los que faltan
     python herramientas/generar_historicos.py --forzar   # rehace todos
     python herramientas/generar_historicos.py BENJA      # solo un personaje
+    python herramientas/generar_historicos.py IKI        # solo Iki
     python herramientas/generar_historicos.py --vista    # + hoja de vista previa
 """
 
@@ -36,6 +53,10 @@ from PIL import Image
 CARPETA = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 PERSONAJES = ["BAUTO", "BENJA", "CASTRO", "POSHO", "THIAGO"]
+
+# Iki: dibujo de partida (mira a la izquierda) y carpeta donde van sus poses
+IKI_DIBUJO = os.path.join(CARPETA, "assets", "personajes", "IKI", "iki frente.png")
+IKI_CARPETA = os.path.join(CARPETA, "assets", "personajes", "IKI")
 
 # ----------------------------------------------------------
 # PARTES DEL DIBUJO ORIGINAL (16 x 27)
@@ -336,6 +357,11 @@ def hoja_de_vista_previa(carpeta_salida):
 
 def main(argumentos):
 
+    if "--viejo" not in argumentos:
+        print("Este script fue reemplazado por herramientas/generar_desde_bauto.py")
+        print("(para usarlo igual: --viejo)")
+        return
+
     forzar = "--forzar" in argumentos
 
     vista = "--vista" in argumentos
@@ -369,6 +395,27 @@ def main(argumentos):
             Image.fromarray(pose, "RGBA").save(ruta)
 
             print("  ", personaje, nombre)
+
+    if not elegidos or "IKI" in elegidos:
+
+        # Se da vuelta para que mire a la derecha, como los demas
+        idle = np.array(
+            Image.open(IKI_DIBUJO).convert("RGBA").transpose(Image.FLIP_LEFT_RIGHT)
+        )
+
+        assert idle.shape[:2] == (ALTO, ANCHO), "iki frente.png tiene que medir 16 x 27"
+
+        Image.fromarray(idle, "RGBA").save(os.path.join(IKI_CARPETA, "final.png"))
+
+        for nombre, pose in generar(idle).items():
+
+            if nombre == "frente.png":
+                # El "frente" de Iki es su dibujo original (iki frente.png)
+                continue
+
+            Image.fromarray(pose, "RGBA").save(os.path.join(IKI_CARPETA, nombre))
+
+            print("  ", "IKI", nombre)
 
     if vista:
 

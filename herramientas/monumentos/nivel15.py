@@ -1,5 +1,10 @@
 """
-NIVEL 15 - LA BOMBONERA
+NIVEL 15 - LA BOMBONERA (JEFE)
+
+    En la arena del jefe se ven de fondo La Bombonera y Caminito. El resto de
+    los dibujos de La Boca (Puente Transbordador, Usina del Arte y el Tren
+    del Roca) quedan disponibles. El Puente Nicolas Avellaneda se dibuja aca
+    pero se usa en el nivel 20 (Avellaneda).
 
     * La Bombonera (estadio Alberto J. Armando, Brandsen 805): paredon azul,
       franja amarilla de travesanos en cruz, modulo central con el escudo y
@@ -9,6 +14,7 @@ NIVEL 15 - LA BOMBONERA
 """
 
 from pixelart import *  # noqa: F401,F403
+from monumentos.la_boca import caminito, transbordador, usina_del_arte  # noqa: F401
 
 
 # ==========================================================
@@ -483,6 +489,8 @@ def tren_roca():
 
 MONUMENTOS = [
     dict(id="bombonera", nombre="La Bombonera", fn=bombonera),
-    dict(id="puente_avellaneda", nombre="Puente Nicolas Avellaneda", fn=puente_avellaneda),
     dict(id="tren_roca", nombre="Tren del Ferrocarril Roca", fn=tren_roca),
+    dict(id="caminito", nombre="Caminito", fn=caminito),
+    dict(id="transbordador", nombre="Puente Transbordador Nicolas Avellaneda", fn=transbordador),
+    dict(id="usina_del_arte", nombre="Usina del Arte", fn=usina_del_arte),
 ]

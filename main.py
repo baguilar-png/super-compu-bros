@@ -8,16 +8,34 @@ from mapa import pantalla_mapa
 from tutorial import jugar_tutorial
 from eleccionPersonajes import seleccionar_personaje
 from intro import pantallas_intro
+from historia import escena_historia
+from escena_dilolio import escena_dilolio
+from escena_fantasma import escena_fantasma
+from escenas_carlitos import llamada_carlitos
 from pixel_font import FuentePixel
 from fondo_menu import FondoMenuAnimado
 import transicion
 import musica
 import sonidos
 import pantalla_ajustes
+import archivos
+import partidas
 from archivos import (
+    ultima_partida,
+    usar_partida,
     cargar_personaje,
     guardar_personaje,
-    cargar_mapa
+    cargar_mapa,
+    historia_vista,
+    marcar_historia_vista,
+    escena_dilolio_vista,
+    escena_vista,
+    marcar_escena_vista,
+    marcar_escena_dilolio_vista,
+    CARLITOS_PERDIDO,
+    CARLITOS_ENCONTRADO,
+    cargar_carlitos,
+    guardar_carlitos
 )
 
 
@@ -34,13 +52,12 @@ pygame.init()
 
 ANCHO, ALTO = 800, 600
 
-pantalla = pygame.display.set_mode(
-    (ANCHO, ALTO)
-)
+# Ventana normal, agrandable, pantalla completa o sin bordes (se elige en
+# AJUSTES; ver ventana.py)
+import ventana
+from archivos import cargar_modo_ventana
 
-pygame.display.set_caption(
-    "Super Compu Bros Alpha 1.000.2"
-)
+pantalla = ventana.aplicar(cargar_modo_ventana())
 
 
 # ==========================================================
@@ -447,6 +464,17 @@ for personaje in personajes:
         ),
         "sprites": sprites_historico
     }
+
+
+# Datos extra en cada juego de sprites: el nombre del personaje y su dibujo
+# de frente (los usa el robot del jefe del nivel 15, ver escenas_robot.py)
+for personaje in personajes:
+
+    for aspecto in (personaje, personaje["historico"]):
+
+        aspecto["sprites"]["nombre"] = personaje["nombre"]
+
+        aspecto["sprites"]["frente"] = aspecto["seleccion"]
 
 
 def buscar_aspecto(sprites):
@@ -941,6 +969,28 @@ BOTON_EXIT = BotonPixel(
     435
 )
 
+# Al tocar JUGAR: NUEVA PARTIDA / CARGAR PARTIDA / VOLVER
+BOTON_NUEVA = BotonPixel(
+    "boton_nueva_partida.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    295
+)
+
+BOTON_CARGAR = BotonPixel(
+    "boton_cargar_partida.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    365
+)
+
+BOTON_VOLVER = BotonPixel(
+    "boton_volver.png",
+    ALTO_BOTON,
+    MARGEN_IZQ,
+    435
+)
+
 
 # ==========================================================
 # ENGRANAJE DE AJUSTES (arriba a la derecha del menu)
@@ -974,15 +1024,20 @@ fuente_titulo_ajustes = FuentePixel(5)
 def abrir_ajustes():
     """Pantalla de ajustes encima del fondo animado del menu."""
 
+    global pantalla
+
     pantalla_ajustes.abrir(
         pantalla,
         reloj,
-        lambda: FONDO_MENU.dibujar(pantalla),
+        lambda: FONDO_MENU.dibujar(pygame.display.get_surface()),
         fuente_titulo_ajustes,
         fuente_media,
         fuente_chica,
         FPS
     )
+
+    # Si se cambio el modo de la ventana, la pantalla es otra
+    pantalla = pygame.display.get_surface()
 
 
 def menu(sprites_elegidos=None):
@@ -1100,7 +1155,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "jugar"
                     inicio_click = pygame.time.get_ticks()
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     continue
 
@@ -1108,7 +1163,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "instrucciones"
                     inicio_click = pygame.time.get_ticks()
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     continue
 
@@ -1116,7 +1171,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "salir"
                     inicio_click = pygame.time.get_ticks()
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     continue
 
@@ -1124,7 +1179,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "ajustes"
                     inicio_click = pygame.time.get_ticks()
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     continue
 
@@ -1147,7 +1202,7 @@ def menu(sprites_elegidos=None):
 
                     accion_click = "jugar"
                     inicio_click = pygame.time.get_ticks()
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     continue
 
@@ -1160,6 +1215,124 @@ def menu(sprites_elegidos=None):
         reloj.tick(FPS)
 
 
+def dibujar_menu_quieto(sprites_elegidos=None, con_barra=True):
+    """Fondo del menu con el logo (para las pantallas de partidas)."""
+
+    FONDO_MENU.dibujar(pantalla)
+
+    pantalla.blit(
+        LOGO,
+        LOGO.get_rect(midleft=(MARGEN_IZQ - LOGO_MARGEN_TRANSPARENTE, 125))
+    )
+
+    if con_barra:
+
+        dibujar_hotbar(pantalla, sprites_elegidos)
+
+
+def menu_partidas(sprites_elegidos=None):
+    """
+    Lo que aparece al tocar JUGAR: NUEVA PARTIDA, CARGAR PARTIDA y VOLVER.
+    Devuelve "nueva", "cargar" o "volver".
+    """
+
+    botones = [
+        ("nueva", BOTON_NUEVA),
+        ("cargar", BOTON_CARGAR),
+        ("volver", BOTON_VOLVER),
+    ]
+
+    accion_click = None
+    inicio_click = None
+    elegido = 0
+
+    while True:
+
+        dibujar_menu_quieto(sprites_elegidos)
+
+        mouse_pos = pygame.mouse.get_pos()
+
+        t_click = (
+            None
+            if inicio_click is None
+            else pygame.time.get_ticks() - inicio_click
+        )
+
+        libre = accion_click is None
+
+        for i, (accion, boton) in enumerate(botones):
+
+            if libre and boton.rect.collidepoint(mouse_pos):
+
+                elegido = i
+
+            boton.dibujar(
+                pantalla,
+                libre and i == elegido,
+                t_click if accion_click == accion else None
+            )
+
+        if t_click is not None and t_click >= DURACION_ANIMACION_MS:
+
+            return accion_click
+
+        for evento in pygame.event.get():
+
+            if evento.type == pygame.QUIT:
+
+                pygame.quit()
+                sys.exit()
+
+            if accion_click is not None:
+
+                continue
+
+            if evento.type == pygame.MOUSEBUTTONDOWN:
+
+                for accion, boton in botones:
+
+                    if boton.rect.collidepoint(evento.pos):
+
+                        accion_click = accion
+                        inicio_click = pygame.time.get_ticks()
+                        sonidos.reproducir("boton")
+
+            if evento.type == pygame.KEYDOWN:
+
+                if evento.key == pygame.K_ESCAPE:
+
+                    return "volver"
+
+                if evento.key in (pygame.K_UP, pygame.K_w):
+
+                    elegido = (elegido - 1) % len(botones)
+
+                if evento.key in (pygame.K_DOWN, pygame.K_s):
+
+                    elegido = (elegido + 1) % len(botones)
+
+                if evento.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+
+                    accion_click = botones[elegido][0]
+                    inicio_click = pygame.time.get_ticks()
+                    sonidos.reproducir("boton")
+
+        pygame.display.flip()
+
+        reloj.tick(FPS)
+
+
+# Nivel antes del cual aparece la presentacion de Di Lolio
+NIVEL_DILOLIO = 5
+
+# Nivel antes del cual aparece la escena del FantasmaCastro (el primero con
+# fantasma, ver NIVEL_FANTASMA_DESDE en juego.py)
+NIVEL_FANTASMA_CASTRO = 10
+
+# Al pasar este nivel un Compu Bro llama a los demas: encontro a Carlitos
+NIVEL_LLAMADA_CARLITOS = 8
+
+
 # ==========================================================
 # FUNCIÓN PRINCIPAL
 # ==========================================================
@@ -1169,6 +1342,9 @@ def main():
     estado = "intro"
 
     sprites_elegidos = None
+
+    # A donde se va despues de elegir personaje ("menu" o "empezar")
+    despues_de_elegir = "menu"
 
     # Pantalla que se mostró en la vuelta anterior (para la transición)
     estado_mostrado = None
@@ -1184,7 +1360,11 @@ def main():
         # Desde la intro solo se abre (la intro termina en negro).
         # --------------------------------------------------
 
-        if estado_mostrado is not None:
+        # Entre el menu y NUEVA/CARGAR PARTIDA no hay transicion (es el
+        # mismo fondo: solo cambian los botones)
+        sin_transicion = {estado_mostrado, estado} <= {"menu", "partidas"}
+
+        if estado_mostrado is not None and not sin_transicion:
 
             if estado_mostrado != "intro":
 
@@ -1210,11 +1390,18 @@ def main():
                 fuente_media
             )
 
-            # Si hay un personaje guardado (personajes.txt) se va
-            # directo al menu, si no se elige
-            sprites_elegidos = sprites_guardados(cargar_personaje())
+            # Se deja en uso la ultima partida que se jugo (solo para ver
+            # su personaje abajo): para jugar igual hay que elegirla con
+            # CARGAR PARTIDA (y su contrasena)
+            numero = ultima_partida()
 
-            estado = "menu" if sprites_elegidos is not None else "personajes"
+            if numero is not None:
+
+                usar_partida(numero)
+
+                sprites_elegidos = sprites_guardados(cargar_personaje())
+
+            estado = "menu"
 
         # --------------------------------------------------
         # SELECCIÓN DE PERSONAJE (ANTES DEL MENÚ)
@@ -1237,21 +1424,21 @@ def main():
 
             if elegido is None:
 
-                # ESC en la selección: si ya había un personaje
-                # elegido se vuelve al menú, si no se sale del juego
-                if sprites_elegidos is None:
-
-                    pygame.quit()
-                    sys.exit()
+                # ESC en la selección: se vuelve al menú
+                estado = "menu"
 
             else:
 
                 sprites_elegidos = elegido
 
                 # Se guarda el personaje (y su aspecto) en personajes.txt
+                # de la partida en uso
                 guardar_personaje(nombre_para_guardar(elegido))
 
-            estado = "menu"
+                # Partida nueva (o despues de perder): arranca a jugar
+                estado = despues_de_elegir
+
+            despues_de_elegir = "menu"
 
         # --------------------------------------------------
         # MENÚ
@@ -1271,15 +1458,111 @@ def main():
                 pygame.quit()
                 sys.exit()
 
-            # La primera vez (ningun nivel completado) PLAY entra directo
-            # al nivel 1; el mapa de Buenos Aires aparece recien despues
-            # de pasar el primer nivel
-            if estado == "jugar" and cargar_mapa()[0] > 0:
+            # JUGAR: NUEVA PARTIDA o CARGAR PARTIDA
+            if estado == "jugar":
+
+                estado = "partidas"
+
+            # C (cambiar personaje) solo con una partida en uso
+            if estado == "personajes" and archivos.partida_actual is None:
+
+                estado = "menu"
+
+        # --------------------------------------------------
+        # NUEVA PARTIDA / CARGAR PARTIDA
+        # --------------------------------------------------
+
+        elif estado == "partidas":
+
+            eleccion = menu_partidas(sprites_elegidos)
+
+            fondo = lambda: dibujar_menu_quieto(sprites_elegidos, con_barra=False)
+
+            if eleccion == "nueva":
+
+                if partidas.nueva_partida(pantalla, reloj, fondo):
+
+                    # Partida nueva: se elige personaje y arranca
+                    sprites_elegidos = None
+                    despues_de_elegir = "empezar"
+                    estado = "personajes"
+
+                else:
+
+                    estado = "partidas"
+
+            elif eleccion == "cargar":
+
+                if partidas.cargar_partida(pantalla, reloj, fondo):
+
+                    sprites_elegidos = sprites_guardados(cargar_personaje())
+
+                    if sprites_elegidos is None:
+
+                        despues_de_elegir = "empezar"
+                        estado = "personajes"
+
+                    else:
+
+                        estado = "empezar"
+
+                else:
+
+                    estado = "partidas"
+
+            else:
+
+                estado = "menu"
+
+        # --------------------------------------------------
+        # EMPEZAR LA PARTIDA EN USO
+        # --------------------------------------------------
+
+        elif estado == "empezar":
+
+            # Al empezar la partida aparece la escena de la historia
+            # (IKI avisa que se llevaron al princesito Mxroy), una vez
+            # por partida
+            if not historia_vista():
+
+                estado = "historia"
+
+            # Sin niveles completados se entra directo al nivel 1 (el
+            # Instituto Huergo); el mapa aparece despues del primero
+            elif cargar_mapa()[0] > 0:
 
                 estado = "mapa"
 
+            else:
+
+                estado = "jugar"
+
+            # (sin transicion extra: la pantalla no cambio)
+            estado_mostrado = "intro"
+
         # --------------------------------------------------
-        # MAPA DE BUENOS AIRES (15 NIVELES, LA BOCA -> LA BOCA)
+        # HISTORIA (SOLO LA PRIMERA VEZ QUE SE TOCA PLAY)
+        # --------------------------------------------------
+
+        elif estado == "historia":
+
+            # En las cinematicas la cancion del nivel se pausa
+            musica.pausar()
+
+            escena_historia(
+                pantalla,
+                reloj,
+                fuente_grande,
+                fuente_media
+            )
+
+            # Vista (o salteada con ESC): no vuelve a aparecer
+            marcar_historia_vista()
+
+            estado = "mapa" if cargar_mapa()[0] > 0 else "jugar"
+
+        # --------------------------------------------------
+        # MAPAS (30 NIVELES: BUENOS AIRES 1-15 Y CONURBANO 16-30)
         # --------------------------------------------------
 
         elif estado in ("mapa", "mapa_victoria"):
@@ -1294,6 +1577,76 @@ def main():
                 sprites_elegidos,
                 animar_completado=(estado == "mapa_victoria")
             )
+
+            # Nivel 8 salteado desde el mapa con los trucos (F10): igual
+            # aparece la llamada de Carlitos
+            if (
+                estado == "mapa_victoria"
+                and cargar_mapa()[0] == NIVEL_LLAMADA_CARLITOS
+                and cargar_carlitos() == CARLITOS_PERDIDO
+            ):
+
+                estado = "llamada_carlitos"
+
+            # Despues de pasar el nivel 4, antes de entrar al 5, aparece
+            # la presentacion de Di Lolio (una sola vez)
+            if (
+                estado == "jugar"
+                and cargar_mapa()[0] + 1 == NIVEL_DILOLIO
+                and not escena_dilolio_vista()
+            ):
+
+                estado = "dilolio"
+
+            # Antes del primer nivel con fantasma: el FantasmaCastro (una
+            # vez por partida)
+            if (
+                estado == "jugar"
+                and cargar_mapa()[0] + 1 == NIVEL_FANTASMA_CASTRO
+                and not escena_vista("fantasma_castro")
+            ):
+
+                estado = "fantasma_castro"
+
+        # --------------------------------------------------
+        # ESCENA DEL FANTASMA CASTRO (ANTES DEL NIVEL 10)
+        # --------------------------------------------------
+
+        elif estado == "fantasma_castro":
+
+            # En las cinematicas la cancion del nivel se pausa
+            musica.pausar()
+
+            escena_fantasma(
+                pantalla,
+                reloj,
+                fuente_grande,
+                fuente_media
+            )
+
+            marcar_escena_vista("fantasma_castro")
+
+            estado = "jugar"
+
+        # --------------------------------------------------
+        # PRESENTACION DE DI LOLIO (ANTES DEL NIVEL 5)
+        # --------------------------------------------------
+
+        elif estado == "dilolio":
+
+            # En las cinematicas la cancion del nivel se pausa
+            musica.pausar()
+
+            escena_dilolio(
+                pantalla,
+                reloj,
+                fuente_grande,
+                fuente_media
+            )
+
+            marcar_escena_dilolio_vista()
+
+            estado = "jugar"
 
         # --------------------------------------------------
         # JUGAR CON EL PERSONAJE ELEGIDO
@@ -1326,9 +1679,53 @@ def main():
             )
 
             # Perdio todas las vidas: hay que elegir personaje de nuevo
+            # (y la partida vuelve a empezar, con sus cinematicas)
             if estado == "personajes":
 
                 sprites_elegidos = None
+
+                despues_de_elegir = "empezar"
+
+            # Paso el nivel 8: llamada de Carlitos antes de volver al mapa
+            if (
+                estado == "mapa_victoria"
+                and cargar_mapa()[0] == NIVEL_LLAMADA_CARLITOS
+                and cargar_carlitos() == CARLITOS_PERDIDO
+            ):
+
+                estado = "llamada_carlitos"
+
+        # --------------------------------------------------
+        # LLAMADA: UN COMPU BRO ENCONTRO A CARLITOS (NIVEL 8)
+        # --------------------------------------------------
+
+        elif estado == "llamada_carlitos":
+
+            # En las cinematicas la cancion del nivel se pausa
+            musica.pausar()
+
+            personaje_en_uso, aspecto_en_uso = buscar_aspecto(sprites_elegidos)
+
+            llamada_carlitos(
+                pantalla,
+                reloj,
+                fuente_grande,
+                fuente_media,
+                jugador=(
+                    personaje_en_uso["nombre"]
+                    if personaje_en_uso is not None
+                    else "BENJA"
+                ),
+                historico=(
+                    personaje_en_uso is not None
+                    and aspecto_en_uso is not personaje_en_uso
+                )
+            )
+
+            # Carlitos aparece en el mapa
+            guardar_carlitos(CARLITOS_ENCONTRADO)
+
+            estado = "mapa_victoria"
 
         # --------------------------------------------------
         # INSTRUCCIONES

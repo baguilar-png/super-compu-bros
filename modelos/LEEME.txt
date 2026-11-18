@@ -1,0 +1,12 @@
+MODELOS GRANDES DE LOS COMPU BROS
+=================================
+
+Estos dibujos NO los usa el juego. Son los Compu Bros del tamano de Lord
+Teichi (el doble de grandes), para mirarlos, editarlos o usarlos despues.
+
+    modelos/<BRO>/frente.png, caminar_1..3.png, saltando.png,
+                  agachado.png, costado.png, cabeza.png
+    modelos/vista_previa.png   los cinco al lado de Teichi
+
+Se vuelven a generar con:
+    python herramientas/generar_modelos_grandes.py

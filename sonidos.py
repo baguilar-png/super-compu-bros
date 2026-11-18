@@ -32,6 +32,20 @@ VOLUMENES = {
     "heineken": 0.50,
     "vidrio": 0.50,
     "meta": 0.55,
+    # Sonidos nuevos (mp3 pasados a .wav)
+    "boton": 0.80,           # tocar un boton del menu (GTA)
+    "cerveza": 0.55,         # agarrar cualquier cerveza (moneda de Mario)
+    "perder_vida": 0.60,     # perder una vida (Mario)
+    "nivel_completo": 0.60,  # pasar un nivel (Roblox)
+    "teclado": 0.55,         # mientras se escriben los dialogos
+    "carta": 0.70,           # cuando aparece la carta (notificacion GTA V)
+    "telefono": 0.70,        # le suena el celular a Di Lolio (Trevor, GTA V)
+    "llamada": 0.55,         # tono de llamada (escena de Carlitos)
+    "faaaa": 0.80,           # Carlitos muerde a Iki en el reencuentro
+    # Escena del FantasmaCastro (herramientas/generar_sonidos_fantasma.py)
+    "vomito": 0.70,
+    "explosion": 0.85,
+    "fantasma": 0.45,
 }
 
 _cache = {}
@@ -101,3 +115,37 @@ def reproducir(nombre):
     sonido.set_volume(volumen)
 
     sonido.play()
+
+
+def reproducir_en_bucle(nombre):
+    """
+    Hace sonar un efecto que se repite hasta llamar a detener(nombre)
+    (por ejemplo el teclado mientras se escribe un dialogo). Si ya estaba
+    sonando no lo reinicia.
+    """
+
+    volumen = volumen_de(nombre)
+
+    if volumen <= 0:
+
+        return
+
+    sonido = _cargar(nombre)
+
+    if sonido is None or sonido.get_num_channels() > 0:
+
+        return
+
+    sonido.set_volume(volumen)
+
+    sonido.play(loops=-1)
+
+
+def detener(nombre):
+    """Corta un efecto que esta sonando (si estaba sonando)."""
+
+    sonido = _cache.get(nombre)
+
+    if sonido is not None:
+
+        sonido.stop()

@@ -21,6 +21,8 @@ import pygame
 
 import ajustes
 import sonidos
+import ventana
+from archivos import cargar_modo_ventana, guardar_modo_ventana
 
 
 # ==========================================================
@@ -257,10 +259,10 @@ def abrir(
 
     ancho, alto = pantalla.get_size()
 
-    sonidos.reproducir("click")
+    sonidos.reproducir("boton")
 
     # Panel
-    panel = pygame.Rect(0, 0, 600, 390)
+    panel = pygame.Rect(0, 0, 600, 460)
 
     panel.center = (ancho // 2, alto // 2 - 30)
 
@@ -288,12 +290,27 @@ def abrir(
         ),
     ]
 
+    # Modo de la ventana: NORMAL / AGRANDABLE / COMPLETA / SIN BORDES
+    modo = cargar_modo_ventana()
+
+    y_modo = panel.top + 285
+
+    caja_modo = pygame.Rect(x_pista - 20, y_modo - 22, ancho_pista + 140, 44)
+
+    def cambiar_modo(paso):
+        nonlocal modo, pantalla
+        modo = ventana.siguiente(modo, paso)
+        guardar_modo_ventana(modo)
+        pantalla = ventana.aplicar(modo)
+        sonidos.reproducir("boton")
+
     # El boton VOLVER (mismo estilo que los del menu)
     boton_volver = pygame.Rect(0, 0, 220, 52)
 
-    boton_volver.midtop = (panel.centerx, panel.top + 268)
+    boton_volver.midtop = (panel.centerx, panel.top + 340)
 
-    foco = 0               # 0 y 1: las barras, 2: el boton VOLVER
+    # 0 y 1: las barras, 2: el modo de la ventana, 3: el boton VOLVER
+    foco = 0
 
     arrastrando = None
 
@@ -320,17 +337,23 @@ def abrir(
 
                 if evento.key in (pygame.K_ESCAPE, pygame.K_RETURN, pygame.K_KP_ENTER):
 
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     return
 
                 if evento.key in (pygame.K_UP, pygame.K_w):
 
-                    foco = (foco - 1) % 3
+                    foco = (foco - 1) % 4
 
                 if evento.key in (pygame.K_DOWN, pygame.K_s):
 
-                    foco = (foco + 1) % 3
+                    foco = (foco + 1) % 4
+
+                if foco == 2 and evento.key in (
+                    pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d
+                ):
+
+                    cambiar_modo(-1 if evento.key in (pygame.K_LEFT, pygame.K_a) else 1)
 
                 if foco < 2 and evento.key in (
                     pygame.K_LEFT, pygame.K_a, pygame.K_RIGHT, pygame.K_d
@@ -348,15 +371,23 @@ def abrir(
 
                     if barra.es_efecto:
 
-                        sonidos.reproducir("guinness")
+                        sonidos.reproducir("cerveza")
 
             if evento.type == pygame.MOUSEBUTTONDOWN and evento.button == 1:
 
                 if boton_volver.collidepoint(evento.pos):
 
-                    sonidos.reproducir("click")
+                    sonidos.reproducir("boton")
 
                     return
+
+                # Modo de la ventana: mitad izquierda va para atras,
+                # mitad derecha para adelante
+                if caja_modo.collidepoint(evento.pos):
+
+                    foco = 2
+
+                    cambiar_modo(-1 if evento.pos[0] < caja_modo.centerx else 1)
 
                 for i, barra in enumerate(barras):
 
@@ -377,7 +408,7 @@ def abrir(
                 # Al soltar la barra de efectos suena una muestra
                 if arrastrando is not None and arrastrando.es_efecto:
 
-                    sonidos.reproducir("guinness")
+                    sonidos.reproducir("cerveza")
 
                 arrastrando = None
 
@@ -420,9 +451,25 @@ def abrir(
                 foco == i
             )
 
+        # Modo de la ventana
+        color_modo = DORADO if foco == 2 else BLANCO
+
+        for texto_m, pos_m in (
+            ("VENTANA", dict(midleft=(x_pista - 190, y_modo))),
+            ("<  " + ventana.NOMBRES.get(modo, "NORMAL") + "  >", dict(center=caja_modo.center)),
+        ):
+            sombra_m = fuente_texto.render(texto_m, True, NEGRO)
+            imagen_m = fuente_texto.render(texto_m, True, color_modo)
+            rect_m = imagen_m.get_rect(**pos_m)
+            pantalla.blit(sombra_m, rect_m.move(3, 3))
+            pantalla.blit(imagen_m, rect_m)
+
+        if caja_modo.collidepoint(mouse) or foco == 2:
+            pygame.draw.rect(pantalla, color_modo, caja_modo, 3)
+
         # Boton VOLVER: al apuntarlo (o elegirlo con el teclado) las
         # letras y el borde se ponen blancos, igual que en el menu
-        resaltado = boton_volver.collidepoint(mouse) or foco == 2
+        resaltado = boton_volver.collidepoint(mouse) or foco == 3
 
         color_borde = BLANCO if resaltado else GRIS_OSCURO
 

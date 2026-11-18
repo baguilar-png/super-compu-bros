@@ -11,6 +11,11 @@ Genera los niveles de TRES PISOS apilados:
 
 A lo lejos se ven los monumentos del barrio.
 
+Los niveles de JEFE (15 y 30, "jefe": True en niveles_config.py) son una
+arena corta: nada mas que la calle, ANCHO_ARENA px de ancho. Se arma igual
+que los demas (mismos edificios de fondo) y al final se recorta el terreno;
+ver recortar_arena().
+
 Para cada nivel produce, en assets/niveles/:
 
     nivel_NN_cielo.png     cielo, astros y nubes             (casi quieto)
@@ -20,6 +25,13 @@ Para cada nivel produce, en assets/niveles/:
                            camina (3200 x 312, pegado al nivel)
     nivel_NN_terreno.json  donde esta cada techo, balcon y escalera
                            (lo lee terreno.py para las colisiones)
+    nivel_NN_efectos.json  lo que el juego anima en vivo: destellos del sol
+                           (dia), luz de las farolas y balizas (noche)
+
+Cada nivel es de DIA (sol: reflejos en los vidrios, brillo en la calle,
+destellos y rayos) o de NOCHE (luna, ventanas prendidas, postes de luz,
+carteles de neon y luces rojas de aviso). Ver efectos_luz.py y la clave
+"noche" de niveles_config.py.
 
 El dibujo y los datos de colision salen del mismo calculo, asi que nunca se
 desacomodan. Un pixel de dibujo = 3 pixeles de pantalla (el nivel mide 9600).
@@ -38,7 +50,7 @@ un BALCON a media altura que sirve de escalon.
 
 Uso (desde la carpeta del juego):
 
-    python herramientas/generar_techos.py            # los 15 niveles
+    python herramientas/generar_techos.py            # los 30 niveles
     python herramientas/generar_techos.py 1 4 12     # solo esos
     python herramientas/generar_techos.py --vista    # + vistas en herramientas/vistas/
 
@@ -63,8 +75,11 @@ from pixelart import *  # noqa: E402,F401,F403
 import edificios as E  # noqa: E402
 import monumentos  # noqa: E402
 import generar_niveles as G  # noqa: E402
+import efectos_luz as L  # noqa: E402
+import interior_huergo as IH  # noqa: E402
+import huergo_real as HR  # noqa: E402
 from niveles_config import NIVELES  # noqa: E402
-from terreno import Terreno  # noqa: E402
+from terreno import Terreno, ANCHO_ARENA  # noqa: E402
 
 CARPETA_NIVELES = os.path.join(CARPETA_JUEGO, "assets", "niveles")
 
@@ -176,10 +191,19 @@ VIDRIO_COL = {VIDRIO, VIDRIO_LUZ, VIDRIO_OSC}
 # AYUDAS
 # ==========================================================
 
-def ancho_capa(parallax):
-    """Ancho de una capa (en px de dibujo) para que se mueva a esa velocidad."""
+def ancho_capa(parallax, ancho_nivel=None):
+    """
+    Ancho de una capa (en px de dibujo) para que se mueva a esa velocidad. Los
+    niveles cortos (el 1) pasan su ancho en pixeles de dibujo.
+    """
 
-    return int(round(PANTALLA + parallax * (ANCHO - PANTALLA)))
+    return int(round(PANTALLA + parallax * ((ancho_nivel or ANCHO) - PANTALLA)))
+
+
+def es_noche(cfg):
+    """Los niveles de noche tienen 'noche' (0.7 a 0.8); los de dia no."""
+
+    return cfg.get("noche", 0) >= 0.5
 
 
 def multiplicar_rgb(lienzo, factores):
@@ -379,6 +403,27 @@ def armar_terreno(n, cfg):
         edificios=edificios,
         balcones=balcones,
         escaleras=escaleras
+    )
+
+
+def armar_terreno_interior(n):
+    """
+    El terreno del nivel 1 (adentro del Huergo): un nivel corto con un solo piso.
+    Hay un unico "edificio" (la pared de fondo, no se pisa: la calle esta abajo
+    de todo y no hay escaleras ni balcones ni nubes) y la marca "interior".
+    """
+
+    ancho = HR.ANCHO_INTERIOR * PX
+
+    return dict(
+        nivel=n,
+        ancho=ancho,
+        interior=True,
+        edificios=[dict(
+            x0=0, x1=ancho, y=TECHOS_Y[0], tier=0, estilo="interior"
+        )],
+        balcones=[],
+        escaleras=[]
     )
 
 
@@ -700,8 +745,17 @@ def prop_tanque(l, x, fila, r):
     return ancho
 
 
+# Puntas de antena del ultimo nivel dibujado (x, y): de noche llevan una luz roja
+PUNTAS_DE_ANTENA = []
+
+
 def prop_antena(l, x, fila, r):
-    E._antena(l, x, fila - 1, r.randint(7, 13))
+
+    alto = r.randint(7, 13)
+
+    E._antena(l, x, fila - 1, alto)
+
+    PUNTAS_DE_ANTENA.append((x, fila - 2 - alto))
 
     return 5
 
@@ -1020,6 +1074,21 @@ def dibujar_escalera(l, x, fila_techo, fila_pie=FILA_CALLE):
             l.px(cx, cy - 1, negro)
 
 
+def componer_recortado(capa, img, x, y):
+    """Pega una imagen con transparencia, recortando lo que se sale del lienzo."""
+
+    sx0 = max(0, -x)
+    sy0 = max(0, -y)
+    sx1 = min(img.width, capa.w - x)
+    sy1 = min(img.height, capa.h - y)
+
+    if sx1 > sx0 and sy1 > sy0:
+
+        capa.im.alpha_composite(img.crop((sx0, sy0, sx1, sy1)), (x + sx0, y + sy0))
+
+        capa.d = ImageDraw.Draw(capa.im)
+
+
 def halo(capa, cx, cy, radio, color, alfa_max):
     """Resplandor redondo (se va transparentando hacia afuera)."""
 
@@ -1040,15 +1109,58 @@ def halo(capa, cx, cy, radio, color, alfa_max):
 
     img[..., 3] = a
 
-    capa.im.alpha_composite(Image.fromarray(img, "RGBA"), (int(cx - radio), int(cy - radio)))
-
-    capa.d = ImageDraw.Draw(capa.im)
+    componer_recortado(capa, Image.fromarray(img, "RGBA"), int(cx - radio), int(cy - radio))
 
 
-def poner_farolas(objetos, terr, cfg, r):
-    """Farolas sobre la vereda, lejos de las escaleras."""
+ALTO_FAROLA = 64
 
-    noche = cfg.get("noche", 0) > 0
+
+def una_farola(objetos, x, cfg, ef, azar, color_luz):
+    """Un poste de la vereda. De noche esta prendido: cono de luz, charcos y halo."""
+
+    cabeza = FILA_CALLE - 2 - ALTO_FAROLA - 3
+
+    noche = es_noche(cfg)
+
+    if noche:
+
+        # la luz cae detras del poste: cono sobre la fachada, charco en la vereda
+        # y un reflejo largo en el asfalto
+        L.cono_de_luz(objetos, x, cabeza, FILA_CALLE - 1, 58, color_luz, 60)
+
+        L.charco_de_luz(objetos, x, FILA_CALLE - 1, 30, 4, color_luz, 130)
+
+        L.charco_de_luz(objetos, x, FILA_CALLE + 14, 40, 8, color_luz, 70)
+
+        L.reflejo_en_asfalto(objetos, x, FILA_CALLE + 8, 26, color_luz, 110)
+
+    farola(objetos, x, FILA_CALLE - 2, ALTO_FAROLA, rgb("#2c3438"))
+
+    if noche:
+
+        objetos.rect(x - 2, cabeza, x + 2, cabeza + 2, mezcla(color_luz, (255, 255, 255), 0.65))
+
+        halo(objetos, x, cabeza + 1, 28, color_luz, 170)
+
+        halo(objetos, x, cabeza + 1, 11, mezcla(color_luz, (255, 255, 255), 0.5), 150)
+
+        if ef is not None:
+
+            ef.lampara("ciudad", x, cabeza + 1, 24, color_luz, parpadea=azar.random() < 0.12)
+
+
+def poner_farolas(objetos, terr, cfg, r, ef=None, azar=None, desde=0):
+    """
+    Farolas sobre la vereda, lejos de las escaleras. De noche estan prendidas
+    y hay el doble (una entre cada par). No se pone ninguna antes de `desde`
+    (el hall del Huergo del nivel 1 es un interior).
+    """
+
+    noche = es_noche(cfg)
+
+    azar = azar or random.Random(0)
+
+    color_luz = G.hx(cfg.get("farola_luz", "#ffe28c"))
 
     libres = [
         (esc.x // PX - 16, esc.x // PX + 16) for esc in terr.escaleras
@@ -1058,31 +1170,93 @@ def poner_farolas(objetos, terr, cfg, r):
 
     while x < ANCHO - 120:
 
-        if all(x < a or x > b for a, b in libres):
+        salto = r.randint(170, 240)
 
-            farola(objetos, x, FILA_CALLE - 2, 64, rgb("#2c3438"))
+        if x >= desde and all(x < a or x > b for a, b in libres):
 
-            if noche:
+            una_farola(objetos, x, cfg, ef, azar, color_luz)
 
-                # luz prendida
-                halo(objetos, x, FILA_CALLE - 66, 34, (255, 226, 140), 90)
+        # de noche, una mas a mitad de camino hasta la siguiente
+        medio = x + salto // 2
 
-                halo(objetos, x, FILA_CALLE - 4, 26, (255, 226, 140), 40)
+        if (
+            noche and medio >= desde and medio < ANCHO - 120
+            and all(medio < a or medio > b for a, b in libres)
+        ):
 
-        x += r.randint(170, 240)
+            una_farola(objetos, medio, cfg, ef, azar, color_luz)
+
+        x += salto
+
+
+def poner_luminarias_de_azotea(objetos, terr, cfg, ocupados, ef, azar):
+    """
+    De noche, postes de luz chicos sobre los techos (con su charco de luz en la
+    azotea) y luces rojas de aviso en la punta de las antenas.
+    """
+
+    color_luz = G.hx(cfg.get("farola_luz", "#ffe28c"))
+
+    for e in terr.edificios:
+
+        fila = e.y // PX
+
+        a, b = terr.zona_libre(e)
+
+        a //= PX
+        b //= PX
+
+        if e.indice == 0:
+            a = max(a, 250)
+
+        if e.indice == len(terr.edificios) - 1:
+            b = min(b, (e.x1 // PX) - 140)
+
+        if b - a < 40 or azar.random() > 0.6:
+
+            continue
+
+        x = a + 5 if azar.random() < 0.5 else b - 5
+
+        if any(o0 - 4 < x < o1 + 4 for o0, o1 in ocupados):
+
+            continue
+
+        L.charco_de_luz(objetos, x, fila - 1, 15, 2, color_luz, 70)
+
+        L.luminaria_azotea(objetos, x, fila - 1, 11, color_luz, ef, "ciudad")
+
+        halo(objetos, x, fila - 14, 12, color_luz, 120)
+
+    for x, y in PUNTAS_DE_ANTENA:
+
+        halo(objetos, x, y, 6, (255, 70, 60), 110)
+
+        L.antena_con_baliza(objetos, x, y, ef, "ciudad")
 
 
 # ==========================================================
 # CAPA CERCANA (calle, edificios y techos por donde se camina)
 # ==========================================================
 
-def hacer_cercana(n, cfg, datos, r):
+def hacer_cercana(n, cfg, datos, r, ef=None):
     """
     Devuelve el lienzo de 3200 x 312 con la calle, los edificios, los techos,
-    los balcones y las escaleras.
+    los balcones y las escaleras. De dia le da el sol (reflejos en los vidrios y
+    en la calle); de noche, ventanas prendidas, postes de luz y balizas.
     """
 
     terr = Terreno.desde_dict(datos)
+
+    noche = es_noche(cfg)
+
+    # los efectos de luz tienen su propio azar: no cambian el dibujo de los
+    # edificios
+    azar = random.Random(9100 + n)
+
+    lado = L.lado_del_sol(cfg)
+
+    del PUNTAS_DE_ANTENA[:]
 
     capa = Lienzo(ANCHO, ALTO_CERCANA)
 
@@ -1121,6 +1295,16 @@ def hacer_cercana(n, cfg, datos, r):
             # linea oscura entre una casa y la otra
             capa.rect(x, fila, x, FILA_FACHADA - 1, sombra(c["fachada"], 0.42))
 
+            # de dia: el sol le da a un costado de la pared (una linea clara)
+            if not noche:
+
+                borde = x + ancho - 2 if lado == "der" else x + 1
+
+                capa.rect(
+                    borde, fila + LOSA + 1, borde, FILA_FACHADA - 3,
+                    luz(c["fachada"], 0.24)
+                )
+
             if previo is None:
                 color_izq[e.indice] = c["fachada"]
 
@@ -1130,11 +1314,44 @@ def hacer_cercana(n, cfg, datos, r):
 
             x += ancho
 
+    # el nivel 2 arranca en la puerta de entrada del Instituto Huergo (de donde
+    # se salio en el nivel 1): la fachada del primer edificio se redibuja como
+    # la entrada real (granito negro, porton de rombos, vidrieras, cornisa).
+    # (Los tramos de arriba ya se dibujaron, asi el azar de los edificios que
+    # siguen no cambia.)
+    if cfg.get("puerta") == "huergo":
+
+        primero = terr.edificios[0]
+
+        fila0 = primero.y // PX
+
+        ancho0 = primero.x1 // PX - primero.x0 // PX
+
+        fachada, c = HR.fachada_entrada(
+            ancho0, FILA_FACHADA - fila0 - LOSA, random.Random(4242)
+        )
+
+        capa.pegar(fachada, 0, fila0 + LOSA)
+
+        dibujar_losa(capa, 0, ancho0 - 1, fila0, c["fachada"])
+
+        capa.rect(0, fila0, 0, FILA_FACHADA - 1, sombra(c["fachada"], 0.42))
+
+        color_izq[0] = color_der[0] = c["fachada"]
+
     # cierre del ultimo edificio
     capa.rect(ANCHO - 1, FILAS_TECHO[0], ANCHO - 1, FILA_FACHADA - 1, rgb("#2a2630"))
 
     # la calle: vereda, cordon y asfalto
     dibujar_calle(capa, r)
+
+    # la vereda de la entrada del Huergo: baldosas ocres y banda amarilla
+    if cfg.get("puerta") == "huergo":
+
+        HR.vereda_entrada(
+            capa, 0, terr.edificios[0].x1 // PX - 1, FILA_FACHADA, FILA_CALLE,
+            random.Random(4343)
+        )
 
     # Sombra donde el edificio alto le tapa la luz al bajo (da profundidad)
     factores = np.ones((ALTO_CERCANA, ANCHO), np.float32)
@@ -1174,10 +1391,25 @@ def hacer_cercana(n, cfg, datos, r):
 
     multiplicar_rgb(capa, factores)
 
-    # ---- luces de noche, bruma y tinte (antes de poner lo de adelante)
-    luces = cfg.get("luces", 0.0) if cfg.get("noche", 0) > 0 else 0.0
+    # ---- sol (dia) o luces (noche), bruma y tinte (antes de poner lo de adelante)
+    ventanas = None
 
-    mascara = G.ventanas_a_encender(capa, luces, r) if luces > 0 else None
+    if noche:
+
+        # se eligen ahora (los vidrios se buscan por su color) y se prenden
+        # despues de teñir, asi la luz no se apaga con la bruma
+        luces = cfg.get("luces", 0.0)
+
+        ventanas = L.elegir_ventanas(capa, luces, azar)
+
+        # de noche las paredes se ven mas oscuras: asi resaltan las luces
+        multiplicar_rgb(capa, np.full((ALTO_CERCANA, ANCHO), NOCHE_OSCURIDAD_CERCANA, np.float32))
+
+    else:
+
+        # los vidrios se buscan ahora (por su color); el sol se les pone
+        # despues de la bruma, asi brillan
+        ventanas_dia = L.Ventanas(capa)
 
     G.tenir(capa, horizonte, 0.05)
 
@@ -1187,8 +1419,21 @@ def hacer_cercana(n, cfg, datos, r):
 
         G.tenir(capa, G.hx(col), t)
 
-    if mascara is not None:
-        G.prender_luces(capa, mascara)
+    if noche:
+
+        L.prender_ventanas(
+            capa, ventanas[0], ventanas[1], azar, cfg.get("paleta_luces", "calida")
+        )
+
+    else:
+
+        # vidrios que reflejan el sol, brillo en la calle y destellos
+        L.reflejos_en_ventanas(
+            capa, 0.42, azar, G.hx(cfg["cielo"][1]), lado, ef, "ciudad",
+            max_brillos=110, ventanas=ventanas_dia
+        )
+
+        L.brillo_de_calle(capa, azar, ef, (FILA_FACHADA, FILA_CALLE, ALTO_CERCANA), ANCHO)
 
     # ---- balcones
     for bal in terr.balcones:
@@ -1230,10 +1475,10 @@ def hacer_cercana(n, cfg, datos, r):
     ocupados = []
 
     # carteles de bienvenida y de salida
+    textos = [("BIENVENIDOS A", 1), (cfg["barrio"], 2)]
+
     ancho_cartel = G.cartel_grande(
-        objetos, 60, FILAS_TECHO[0],
-        [("BIENVENIDOS A", 1), (cfg["barrio"], 2)],
-        rgb("#1f4a8f"), BLANCO
+        objetos, 60, FILAS_TECHO[0], textos, rgb("#1f4a8f"), BLANCO
     )
 
     ocupados.append((55, 60 + ancho_cartel + 6))
@@ -1267,9 +1512,17 @@ def hacer_cercana(n, cfg, datos, r):
 
         ocupados.append((esc.x // PX - 14, esc.x // PX + 14))
 
-    poner_farolas(objetos, terr, cfg, r)
+    # (en el nivel 2 las farolas arrancan despues de la puerta de entrada)
+    poner_farolas(
+        objetos, terr, cfg, r, ef, azar,
+        desde=HR.DER_VIDRIERA[1] + 14 if cfg.get("puerta") else 12
+    )
 
     poner_props(objetos, terr, cfg, r, ocupados)
+
+    if noche:
+
+        poner_luminarias_de_azotea(objetos, terr, cfg, ocupados, ef, azar)
 
     if "tinte" in cfg:
 
@@ -1283,13 +1536,151 @@ def hacer_cercana(n, cfg, datos, r):
 
 
 # ==========================================================
+# LA CAPA CERCANA DEL NIVEL 1: TODO POR DENTRO DEL HUERGO
+# ==========================================================
+
+def hacer_cercana_plana(n, cfg, datos, r, ef=None):
+    """
+    El nivel 1 transcurre ADENTRO del Instituto Huergo y es mas corto que los
+    demas: 1600 columnas de dibujo (4800 px). Se recorre por un solo piso, el
+    del pasillo, asi que no hay techos, balcones ni escaleras: las paredes
+    llegan hasta el cielorraso, de punta a punta.
+
+    El recorrido (huergo_real.RUTA) va de un taller a los pasillos con aulas,
+    el laboratorio, la biblioteca, la escalera, la secretaria y el salon de
+    actos; despues el vestibulo (con el nombre en el granito negro) y, justo
+    en la bandera de meta, el porton de calle abierto.
+    Devuelve el lienzo de 1600 x 312.
+    """
+
+    HR.verificar_ruta()
+
+    ancho_total = HR.ANCHO_INTERIOR
+
+    capa = Lienzo(ancho_total, ALTO_CERCANA)
+
+    cuerpo = FILA_FACHADA - HR.FILA_TOPE
+
+    modulos = list(HR.RUTA) + [
+        ("vestibulo", HR.VESTIBULO_ANCHO),
+        ("salida", HR.SALIDA_ANCHO)
+    ]
+
+    ventanales = []
+
+    x_puerta = None
+
+    x = 0
+
+    for est, ancho in modulos:
+
+        if est == "vestibulo":
+            fachada, c = HR.modulo_vestibulo(ancho, cuerpo, r)
+        elif est == "salida":
+            fachada, c = HR.modulo_salida_reja(ancho, cuerpo, r)
+        else:
+            fachada, c = IH.fachada(est, ancho, cuerpo, r)
+
+        capa.pegar(fachada, x, HR.FILA_TOPE)
+
+        # linea oscura entre un modulo y el otro
+        capa.rect(x, HR.FILA_TOPE, x, FILA_FACHADA - 1, sombra(c["fachada"], 0.42))
+
+        for lx in c.get("luces", []):
+            ventanales.append(x + lx)
+
+        if est == "salida":
+            x_puerta = x + ancho - HR.SALIDA_PUERTA_DX
+
+        x += ancho
+
+    # cierre del final del nivel
+    capa.rect(ancho_total - 1, HR.FILA_TOPE, ancho_total - 1, FILA_FACHADA - 1, rgb("#2a2630"))
+
+    # el cielorraso con su cornisa, el piso de granito y el umbral de la calle
+    HR.cielorraso(capa, r)
+
+    HR.piso_granito(capa, r)
+
+    HR.piso_umbral(capa, x_puerta - HR.SALIDA_PUERTA_MITAD - 3, ancho_total - 1, r)
+
+    for cx in ventanales:
+
+        IH.charco_de_luz(capa, cx, 18)
+
+    IH.luz_de_la_salida(capa, x_puerta - HR.SALIDA_PUERTA_MITAD - 5)
+
+    # abajo de las paredes queda un poco mas oscuro (le llega menos luz)
+    factores = np.ones((ALTO_CERCANA, ancho_total), np.float32)
+
+    for y in range(FILA_FACHADA - 14, FILA_FACHADA):
+
+        factores[y, :] *= 1.0 - 0.14 * (y - (FILA_FACHADA - 14)) / 14
+
+    multiplicar_rgb(capa, factores)
+
+    # un tinte calido: luz de tubos y de ventanales
+    G.tenir(capa, rgb("#fff0c8"), 0.05)
+
+    # los tubos fluorescentes del cielorraso (uno cada tanto, no sobre la salida)
+    HR.luminarias(capa, list(range(40, x_puerta - 40, 78)), r)
+
+    return capa
+
+
+# ==========================================================
 # CIELO
 # ==========================================================
 
-def hacer_cielo(n, cfg):
+def luna_con_fase(l, lx, ly, lr, fase):
+    """
+    La luna (llena, creciente o media), con sus crateres. Lo que queda en sombra
+    no se dibuja: se ve el cielo (y el resplandor) a traves.
+    """
+
+    color = rgb("#f4f1de")
+    crater = rgb("#d6d3bf")
+
+    # mordida de la fase: un circulo corrido que tapa parte de la luna
+    if fase == "creciente":
+        mx, my, mr = lx + int(lr * 0.62), ly - int(lr * 0.12), int(lr * 0.92)
+    elif fase == "media":
+        mx, my, mr = lx + int(lr * 1.05), ly, int(lr * 1.05)
+    else:
+        mx, my, mr = None, None, 0
+
+    for y in range(ly - lr, ly + lr + 1):
+
+        for x in range(lx - lr, lx + lr + 1):
+
+            if (x - lx) ** 2 + (y - ly) ** 2 > lr * lr + lr * 0.6:
+
+                continue
+
+            if mx is not None and (x - mx) ** 2 + (y - my) ** 2 < mr * mr:
+
+                continue
+
+            l.px(x, y, color)
+
+    if fase == "llena":
+
+        l.circulo(lx + lr // 3, ly - lr // 3, lr // 4, crater)
+        l.circulo(lx - lr // 3, ly + lr // 4, lr // 5, crater)
+
+    else:
+
+        l.px(lx - lr // 2, ly + lr // 4, crater)
+        l.px(lx - lr // 2, ly - lr // 5, crater)
+        l.px(lx - lr // 3, ly + lr // 2, crater)
+
+
+def hacer_cielo(n, cfg, ef=None):
     """Degradado, estrellas, sol o luna y nubes (sin ciudad)."""
 
     r = random.Random(7000 + n)
+
+    azar = random.Random(9300 + n)
 
     W = ancho_capa(PARALLAX["cielo"])
 
@@ -1297,12 +1688,12 @@ def hacer_cielo(n, cfg):
 
     l = cielo(W, ALTO, arriba, medio, abajo)
 
-    noche = cfg.get("noche", 0)
+    noche = es_noche(cfg)
 
     k = W / 1300.0
 
     # estrellas
-    if cfg.get("estrellas") or noche > 0.45:
+    if cfg.get("estrellas") or cfg.get("noche", 0) > 0.45:
 
         for _ in range(60 if cfg.get("estrellas") else 28):
 
@@ -1316,6 +1707,27 @@ def hacer_cielo(n, cfg):
                 for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
                     l.px(x + dx, y + dy, rgb("#cfd6ff"))
 
+        # de noche, mas estrellas (y mas chicas) en el borde de arriba
+        if noche:
+
+            for _ in range(70):
+
+                x = azar.randint(0, W - 1)
+                y = azar.randint(0, 100)
+
+                l.px(x, y, rgb("#aab4f0") if azar.random() < 0.7 else rgb("#e8ecff"))
+
+            # estrellas que brillan en cruz
+            for _ in range(7):
+
+                x = azar.randint(6, W - 7)
+                y = azar.randint(4, 70)
+
+                l.px(x, y, rgb("#ffffff"))
+
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    l.px(x + dx, y + dy, rgb("#d8deff"))
+
     # sol (la x de la configuracion era para un cielo de 1300 de ancho)
     if "sol" in cfg:
 
@@ -1325,23 +1737,42 @@ def hacer_cielo(n, cfg):
 
         col = G.hx(sc)
 
-        for kk, tt in ((sr + 6, 0.12), (sr + 3, 0.22)):
+        # rayos y resplandor grande (debajo del disco)
+        L.rayos_de_sol(l, sx, sy, col, 70, 12, azar)
+
+        halo(l, sx, sy, sr * 7, col, 90)
+
+        halo(l, sx, sy, sr * 4, mezcla(col, (255, 255, 255), 0.4), 110)
+
+        for kk, tt in ((sr + 6, 0.16), (sr + 3, 0.30)):
             l.circulo(sx, sy, kk, mezcla(medio if sy < 100 else abajo, col, tt))
 
         l.circulo(sx, sy, sr, col)
         l.circulo(sx - 2, sy - 2, max(2, sr - 4), luz(col, 0.35))
+        l.circulo(sx - 1, sy - 1, max(1, sr - 6), rgb("#ffffff"))
+
+        if ef is not None:
+
+            ef.astro_en_cielo("sol", sx, sy, sr, col)
 
     # luna
     if "luna" in cfg:
 
-        lx, ly, lr = cfg["luna"]
+        lx, ly, lr = cfg["luna"][:3]
+
+        fase = cfg["luna"][3] if len(cfg["luna"]) > 3 else "llena"
 
         lx = int(70 + lx * k * 0.8)
 
-        l.circulo(lx, ly, lr + 4, mezcla(medio, rgb("#ffffff"), 0.12))
-        l.circulo(lx, ly, lr, rgb("#f4f1de"))
-        l.circulo(lx + lr // 3, ly - lr // 3, lr // 4, rgb("#d6d3bf"))
-        l.circulo(lx - lr // 3, ly + lr // 4, lr // 5, rgb("#d6d3bf"))
+        halo(l, lx, ly, lr * 6, (170, 190, 255), 70)
+
+        halo(l, lx, ly, lr * 3, (220, 228, 255), 90)
+
+        luna_con_fase(l, lx, ly, lr, fase)
+
+        if ef is not None:
+
+            ef.astro_en_cielo("luna", lx, ly, lr, (190, 205, 255))
 
     # nubes
     col_nube = G.hx(cfg.get("nubes", "#ffffff"))
@@ -1372,6 +1803,10 @@ MON_ESCALA_MAX = 0.9
 
 # Fila donde apoyan los monumentos y la ciudad lejana
 LEJOS_BASE = 138
+
+# Cuanto se oscurecen de noche las paredes de la calle y las del medio (1 = nada)
+NOCHE_OSCURIDAD_CERCANA = 0.66
+NOCHE_OSCURIDAD_MEDIO = 0.80
 
 # Que tan nebulosos se ven
 BRUMA_MONUMENTO = 0.34
@@ -1423,14 +1858,53 @@ def luces_lejanas(spr, prob, r):
     spr.d = ImageDraw.Draw(spr.im)
 
 
-def hacer_lejos(n, cfg):
+def balizas_en_siluetas(l, azar, ef, prob):
+    """
+    Luces rojas de aviso en las puntas mas altas de la ciudad lejana (cada una
+    con una antenita; en el juego prenden y apagan).
+    """
+
+    a = np.array(l.im)[..., 3] > 0
+
+    ancho = a.shape[1]
+
+    tope = np.where(a.any(axis=0), a.argmax(axis=0), 10 ** 6)
+
+    x = 8
+
+    while x < ancho - 8:
+
+        y = int(tope[x])
+
+        if y < LEJOS_BASE - 24 and y == tope[x - 6:x + 7].min() and azar.random() < prob:
+
+            l.rect(x, y - 4, x, y - 1, (44, 50, 90))
+
+            L.antena_con_baliza(l, x, y - 5, ef, "lejos")
+
+            halo(l, x, y - 5, 4, (255, 70, 60), 110)
+
+            x += 26
+
+        else:
+
+            x += 1
+
+
+def hacer_lejos(n, cfg, ef=None):
     """
     La ciudad de lejos: siluetas del barrio y, encima, sus monumentos
     (achicados y con bruma). Cada monumento aparece en pantalla cuando el
     personaje pasa por donde estaba en el dibujo viejo con la calle.
+    De dia, el sol les aclara el borde; de noche tienen ventanitas prendidas,
+    luces rojas de aviso y focos en los monumentos.
     """
 
     r = random.Random(7500 + n)
+
+    azar = random.Random(9200 + n)
+
+    es_de_noche = es_noche(cfg)
 
     W = ancho_capa(PARALLAX["lejos"])
 
@@ -1458,6 +1932,13 @@ def hacer_lejos(n, cfg):
 
         if noche > 0.45:
             G.puntos_de_luz(l, c, 0.10, rgb("#ffd890"), r)
+
+            # mas ventanitas, de varios colores
+            G.puntos_de_luz(l, c, 0.05, rgb(azar.choice(["#fff0b0", "#ffb860", "#b8d8ff"])), azar)
+
+    if es_de_noche:
+
+        balizas_en_siluetas(l, azar, ef, 0.5)
 
     # monumentos
     todos = monumentos.cargar([n])[n]
@@ -1489,14 +1970,28 @@ def hacer_lejos(n, cfg):
 
         x = max(2, min(W - spr.w - 2, x))
 
-        luces = cfg.get("luces", 0.0) if noche > 0 else 0.0
+        luces = cfg.get("luces", 0.0) if es_de_noche else 0.0
 
         if luces > 0:
             luces_lejanas(spr, luces * 0.35, r)
 
+        # de noche, un foco ilumina el monumento desde abajo
+        if es_de_noche:
+
+            halo(
+                l, x + spr.w // 2, LEJOS_BASE - spr.h // 3,
+                max(16, int(spr.w * 0.62)),
+                G.hx(cfg.get("farola_luz", "#ffe28c")), 70
+            )
+
         l.pegar(spr, x, LEJOS_BASE + 2 - spr.h)
 
         sprites[idm] = (x, spr.w, spr.h)
+
+    # de dia, el sol le aclara el borde de arriba y el lado que da al sol
+    if not es_de_noche:
+
+        L.luz_de_borde(l, (255, 244, 210), 0.30, L.lado_del_sol(cfg))
 
     return l, sprites
 
@@ -1505,9 +2000,26 @@ def hacer_lejos(n, cfg):
 # EDIFICIOS DEL MEDIO
 # ==========================================================
 
-def hacer_medio(n, cfg):
+NEON_COLORES = [
+    (255, 90, 190), (90, 230, 255), (190, 140, 255), (120, 255, 170), (255, 150, 60),
+    (255, 70, 90),
+]
+
+
+def hacer_medio(n, cfg, ef=None):
+    """
+    Los edificios del medio. De dia reflejan el sol en los vidrios y en el
+    borde; de noche tienen ventanas prendidas, postes de luz y carteles de neon
+    en las terrazas y luces rojas de aviso en los mas altos.
+    """
 
     r = random.Random(7800 + n)
+
+    azar = random.Random(9400 + n)
+
+    noche = es_noche(cfg)
+
+    lado = L.lado_del_sol(cfg)
 
     W = ancho_capa(PARALLAX["medio"])
 
@@ -1531,6 +2043,8 @@ def hacer_medio(n, cfg):
 
     arboles = cfg.get("arboles", [])
 
+    edificios = []
+
     x = -4
 
     while x < W:
@@ -1542,6 +2056,8 @@ def hacer_medio(n, cfg):
         spr = E.fondo_edificio(w, h, r, dict(fachada=r.choice(base_cols)))
 
         l.pegar(spr, x, ALTO - h)
+
+        edificios.append((x, ALTO - h, w, h))
 
         x += w - 1 + r.randint(0, 3)
 
@@ -1558,9 +2074,16 @@ def hacer_medio(n, cfg):
 
     horizonte = G.hx(cfg["cielo"][2])
 
-    luces = cfg.get("luces", 0.0) if cfg.get("noche", 0) > 0 else 0.0
+    # los vidrios se buscan antes de la bruma (por su color)
+    if noche:
 
-    mascara = G.ventanas_a_encender(l, luces * 0.7, r) if luces > 0 else None
+        ventanas = L.elegir_ventanas(l, cfg.get("luces", 0.0) * 0.7, azar)
+
+        multiplicar_rgb(l, np.full((ALTO, W), NOCHE_OSCURIDAD_MEDIO, np.float32))
+
+    else:
+
+        ventanas_dia = L.Ventanas(l)
 
     G.tenir(l, horizonte, BRUMA_MEDIO)
 
@@ -1570,8 +2093,55 @@ def hacer_medio(n, cfg):
 
         G.tenir(l, G.hx(col), t)
 
-    if mascara is not None:
-        G.prender_luces(l, mascara)
+    if not noche:
+
+        L.reflejos_en_ventanas(
+            l, 0.40, azar, G.hx(cfg["cielo"][1]), lado, ef, "medio",
+            max_brillos=70, ventanas=ventanas_dia
+        )
+
+        L.luz_de_borde(l, (255, 244, 210), 0.30, lado)
+
+        return l
+
+    # ---- noche
+    L.prender_ventanas(l, ventanas[0], ventanas[1], azar, cfg.get("paleta_luces", "calida"))
+
+    color_luz = G.hx(cfg.get("farola_luz", "#ffe28c"))
+
+    prob_neon = 0.5 if cfg.get("neon") else 0.12
+
+    for x, y, w, h in edificios:
+
+        # poste de luz en la terraza
+        if w >= 20 and azar.random() < 0.55:
+
+            px_ = x + 3 if azar.random() < 0.5 else x + w - 4
+
+            halo(l, px_, y - 6, 11, color_luz, 120)
+
+            L.luminaria_azotea(l, px_, y - 1, 5, color_luz, ef, "medio")
+
+        # cartel de neon en la fachada
+        if h > 50 and azar.random() < prob_neon:
+
+            ancho = azar.randint(6, min(12, w - 6))
+
+            L.letrero_neon(
+                l, x + azar.randint(2, w - ancho - 2), y + azar.randint(10, int(h * 0.6)),
+                ancho, azar.choice(NEON_COLORES), ef, "medio"
+            )
+
+        # los mas altos llevan una luz roja de aviso
+        if h >= alto_max * 0.82 and azar.random() < 0.6:
+
+            ax = x + w // 2
+
+            l.rect(ax, y - 4, ax, y - 1, (44, 50, 90))
+
+            L.antena_con_baliza(l, ax, y - 5, ef, "medio")
+
+            halo(l, ax, y - 5, 4, (255, 70, 60), 110)
 
     return l
 
@@ -1580,26 +2150,90 @@ def hacer_medio(n, cfg):
 # ARMADO Y GUARDADO
 # ==========================================================
 
+# Las escaleras que quedan en la arena de un jefe: se dejan solo las que
+# estan mas alla de ARENA_ESCALERAS_X, fuera de la pantalla. Hacen falta
+# porque terreno.py toma "hay escaleras" como "el nivel tiene calle"; si no
+# quedara ninguna, el jugador arrancaria arriba de un techo.
+ARENA_ESCALERAS_X = ANCHO_ARENA + 800
+
+
+def recortar_arena(datos):
+    """
+    Convierte el terreno de un nivel entero en la arena de un jefe: ancho
+    corto y calle libre (sin escaleras al alcance). Se llama despues de
+    verificar_terreno, que pide el nivel completo.
+    """
+
+    datos["ancho"] = ANCHO_ARENA
+
+    datos["escaleras"] = [
+        e for e in datos["escaleras"] if e["x"] > ARENA_ESCALERAS_X
+    ]
+
+    if not datos["escaleras"]:
+        raise RuntimeError("arena sin escaleras lejanas: el juego la tomaria sin calle")
+
+    return datos
+
+
 def armar_nivel(n, verbose=True):
 
     cfg = NIVELES[n]
 
     r = random.Random(1000 + n)
 
-    datos = armar_terreno(n, cfg)
+    if cfg.get("interior"):
 
-    problemas = verificar_terreno(datos)
+        # el nivel 1 es por dentro del colegio: un solo piso, sin techos
+        datos = armar_terreno_interior(n)
 
-    if problemas:
-        raise RuntimeError("nivel {}: {}".format(n, "; ".join(sorted(set(problemas)))))
+    else:
 
-    cercana = hacer_cercana(n, cfg, datos, r)
+        datos = armar_terreno(n, cfg)
 
-    medio = hacer_medio(n, cfg)
+        problemas = verificar_terreno(datos)
 
-    lejos, mons = hacer_lejos(n, cfg)
+        if problemas:
+            raise RuntimeError("nivel {}: {}".format(n, "; ".join(sorted(set(problemas)))))
 
-    cielo_img = hacer_cielo(n, cfg)
+        if cfg.get("jefe"):
+            recortar_arena(datos)
+
+        # el nivel 2 arranca justo en la puerta del Huergo (a unos 16 px de la
+        # mitad del personaje, que mide como 32 de ancho)
+        if cfg.get("puerta") == "huergo":
+            datos["inicio_x"] = HR.ENTRADA_CX * PX - 16
+
+    # lo que el juego anima en vivo (destellos, luz de farolas, balizas)
+    ef = L.Efectos(random.Random(9000 + n))
+
+    if cfg.get("interior"):
+
+        # por dentro: las paredes llegan hasta el cielorraso (la capa cercana
+        # tapa toda la pantalla); las capas lejanas son de reserva
+        cercana = hacer_cercana_plana(n, cfg, datos, r, ef)
+
+        medio = IH.capa_medio(
+            ancho_capa(PARALLAX["medio"], HR.ANCHO_INTERIOR), ALTO, random.Random(7800 + n)
+        )
+
+        lejos = IH.capa_lejos(
+            ancho_capa(PARALLAX["lejos"], HR.ANCHO_INTERIOR), ALTO, random.Random(7500 + n)
+        )
+
+        mons = {}
+
+        cielo_img = IH.capa_cielo(ancho_capa(PARALLAX["cielo"], HR.ANCHO_INTERIOR), ALTO)
+
+    else:
+
+        cercana = hacer_cercana(n, cfg, datos, r, ef)
+
+        medio = hacer_medio(n, cfg, ef)
+
+        lejos, mons = hacer_lejos(n, cfg, ef)
+
+        cielo_img = hacer_cielo(n, cfg, ef)
 
     if verbose:
 
@@ -1607,16 +2241,17 @@ def armar_nivel(n, verbose=True):
 
         print(
             "nivel {:2d} {:14s} edificios={:2d} (chicos {}, medianos {}, grandes {}) "
-            "balcones={}".format(
+            "balcones={} {}".format(
                 n, cfg["barrio"], len(tiers),
                 tiers.count(0), tiers.count(1), tiers.count(2),
-                len(datos["balcones"])
+                len(datos["balcones"]),
+                "NOCHE" if es_noche(cfg) else "dia"
             )
         )
 
     return dict(
         datos=datos, cercana=cercana, medio=medio, lejos=lejos,
-        cielo=cielo_img, monumentos=mons
+        cielo=cielo_img, monumentos=mons, efectos=ef
     )
 
 
@@ -1638,6 +2273,10 @@ def guardar_nivel(n, nivel):
 
         json.dump(nivel["datos"], f, indent=1)
 
+    with open(base + "_efectos.json", "w", encoding="utf-8") as f:
+
+        json.dump(nivel["efectos"].a_dict(), f, separators=(",", ":"))
+
 
 # Cuanto se mueve cada capa en vertical respecto de la camara (igual que en
 # fondos_nivel.py)
@@ -1652,6 +2291,9 @@ def componer(nivel, camara_px, camara_y_px=0):
 
     ancho_v = 800 // PX + 1
 
+    # ancho del nivel en pixeles de dibujo (el nivel 1, por dentro, es mas corto)
+    ancho_n = nivel["datos"]["ancho"] // PX if nivel["datos"].get("interior") else ANCHO
+
     pantalla = Image.new("RGBA", (ancho_v, ALTO), (0, 0, 0, 255))
 
     for nombre, clave in (("cielo", "cielo"), ("lejos", "lejos"), ("medio", "medio"), ("ciudad", "cercana")):
@@ -1661,7 +2303,7 @@ def componer(nivel, camara_px, camara_y_px=0):
         if clave == "cercana":
             x = camara_px // PX
         else:
-            vel = (capa.w - PANTALLA) / (ANCHO - PANTALLA)
+            vel = (capa.w - PANTALLA) / (ancho_n - PANTALLA)
             x = int(camara_px / PX * vel)
 
         x = max(0, min(capa.w - ancho_v, x))
@@ -1699,13 +2341,22 @@ def vista_previa(n, nivel, carpeta):
 
     os.makedirs(carpeta, exist_ok=True)
 
-    for nombre, camara_y in (("techos", 0), ("calle", FILA_CALLE * PX - 480)):
+    interior = nivel["datos"].get("interior")
+
+    ancho_px = nivel["datos"]["ancho"] if interior else NIVEL_PX
+
+    # por dentro solo hay un piso: no hay vista de los techos
+    vistas = (("calle", FILA_CALLE * PX - 480),) if interior else (
+        ("techos", 0), ("calle", FILA_CALLE * PX - 480)
+    )
+
+    for nombre, camara_y in vistas:
 
         paneles = []
 
         for k in range(6):
 
-            camara = int(k * (NIVEL_PX - 800) / 5)
+            camara = int(k * (ancho_px - 800) / 5)
 
             im = componer(nivel, camara, camara_y).convert("RGB")
 
@@ -1721,7 +2372,7 @@ def vista_previa(n, nivel, carpeta):
         m.save(os.path.join(carpeta, "techos_nivel_{:02d}_{}.png".format(n, nombre)))
 
     # el nivel entero (capa cercana sobre el cielo), achicado
-    tira = Image.new("RGBA", (ANCHO, ALTO_CERCANA), (0, 0, 0, 255))
+    tira = Image.new("RGBA", (nivel["cercana"].w, ALTO_CERCANA), (0, 0, 0, 255))
 
     tira.alpha_composite(nivel["cielo"].im.crop((0, 0, nivel["cielo"].w, ALTO)).convert("RGBA"), (0, 0))
 

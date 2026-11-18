@@ -24,7 +24,7 @@ velocidad) y comprueba tres cosas:
 
 Uso (desde la carpeta del juego):
 
-    python herramientas/probar_nubes.py              # los 15 niveles, 4 semillas
+    python herramientas/probar_nubes.py              # los 30 niveles, 4 semillas
     python herramientas/probar_nubes.py 3 8 12       # solo esos niveles
     python herramientas/probar_nubes.py -s 10        # 10 semillas por nivel
 
@@ -289,11 +289,14 @@ def ruta_cielo(t, desde=None, robusto=True, r=None, cache=None):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("niveles", nargs="*", type=int, help="niveles a probar (por defecto los 15)")
+    ap.add_argument("niveles", nargs="*", type=int, help="niveles a probar (por defecto los 30, menos las arenas de jefe 15 y 30 y el nivel 1, que es por dentro y no tiene cielo)")
     ap.add_argument("-s", "--semillas", type=int, default=4, help="semillas por nivel (por defecto 4)")
     args = ap.parse_args()
 
-    niveles = args.niveles or list(range(1, 16))
+    niveles = args.niveles or [
+        n for n in range(1, 31)
+        if n not in (15, 30) and not Terreno.cargar(n).interior
+    ]
     t0 = time.time()
     cantidades = []
     fallas = 0

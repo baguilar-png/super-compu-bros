@@ -29,11 +29,21 @@ nubes donde se camina se dibujan por codigo (pixel art generado al vuelo).
 Los dibujos estan hechos con pixeles de 1 x 1 y se agrandan PX veces: cada
 pixel de dibujo ocupa PX x PX pixeles de la pantalla.
 
+Dia y noche: cada nivel es de dia (con sol: reflejos en los vidrios, rayos,
+destellos que titilan y un resplandor con reflejos de lente) o de noche (con
+luna, ventanas prendidas, postes de luz que alumbran, carteles de neon y luces
+rojas de aviso que parpadean). Lo que se dibuja en las capas ya viene en las
+imagenes; lo que se mueve (destellos, luz de los postes, balizas, el brillo del
+sol y de la luna) se anota en nivel_NN_efectos.json y se anima aca, con el
+mismo parallax que la capa donde esta. Si falta ese archivo, el fondo se ve
+igual (solo quieto).
+
 Si faltan las capas lejos y medio, igual anda (con el cielo y la ciudad). Y si
 faltan las imagenes se usa un fondo simple (cielo celeste y edificios grises
 con la forma de los techos), asi el juego nunca se rompe.
 """
 
+import json
 import math
 import os
 import random
@@ -44,7 +54,7 @@ CARPETA = os.path.dirname(os.path.abspath(__file__))
 
 CARPETA_NIVELES = os.path.join(CARPETA, "assets", "niveles")
 
-TOTAL_FONDOS = 15
+TOTAL_FONDOS = 30
 
 # Pixeles de pantalla por pixel de dibujo
 PX = 3
@@ -81,13 +91,44 @@ NUBE_COLOR_LUZ = (255, 255, 255)
 NUBE_COLOR_MEDIO = (226, 236, 252)
 NUBE_COLOR_SOMBRA = (176, 198, 238)
 
-# Niveles cuyo cielo es oscuro (atardecer / noche): el texto del HUD
-# se dibuja en blanco para que se lea
-NIVELES_OSCUROS = (12, 13, 14, 15)
+# Nubes de noche: iluminadas por la luna (azules apagadas)
+NUBE_NOCHE_BORDE = (34, 44, 98)
+NUBE_NOCHE_LUZ = (126, 142, 206)
+NUBE_NOCHE_MEDIO = (88, 104, 168)
+NUBE_NOCHE_SOMBRA = (60, 72, 134)
+
+# Niveles de noche: el texto del HUD se dibuja en blanco para que se lea y
+# las nubes se ven a la luz de la luna
+NIVELES_OSCUROS = (3, 6, 9, 12, 14, 15, 18, 21, 23, 25, 27, 30)
+
+# Niveles que transcurren por dentro de un edificio (el 1: el Instituto Huergo).
+# Son de un solo piso: la camara nunca sube, no hay nubes ni estrellas, y la
+# capa cercana (las paredes hasta el cielorraso) tapa toda la pantalla.
+NIVELES_INTERIOR = (1,)
+
+INTERIOR_OSCURO_COLOR = (12, 9, 7)
+
+# Destellos del sol en los vidrios: cuanto dura cada uno dentro de su ciclo
+DESTELLO_DURACION = 0.30
+DESTELLO_COLOR = (255, 252, 226)
+
+# Luces rojas de aviso: parte del ciclo que estan prendidas
+BALIZA_PRENDIDA = 0.45
+
+# Resplandor del sol y de la luna (radio en pixeles de pantalla, color y
+# cuanto suman) y reflejos de lente del sol: (a que fraccion del camino del
+# sol al centro de la pantalla, radio en pixeles de dibujo, color, cuanto suman)
+SOL_BRILLO = ((320, (255, 236, 180), 0.32), (110, (255, 250, 225), 0.42))
+LUNA_BRILLO = ((250, (150, 175, 255), 0.30), (90, (220, 230, 255), 0.36))
+REFLEJOS_LENTE = (
+    (0.55, 3, (255, 214, 140), 0.16),
+    (0.95, 5, (150, 220, 255), 0.10),
+    (1.40, 3, (255, 190, 220), 0.14),
+)
 
 
 def numero_de_fondo(nivel):
-    """El mapa da la vuelta: el nivel 16 usa el fondo del 1, etc."""
+    """Hay un fondo por nivel (1 a 30); pasado el 30 da la vuelta."""
 
     return ((max(1, int(nivel)) - 1) % TOTAL_FONDOS) + 1
 
@@ -120,6 +161,39 @@ class FondoNivel:
         self.numero = numero_de_fondo(nivel)
 
         self.oscuro = self.numero in NIVELES_OSCUROS
+
+        # Por dentro de un edificio: sin nubes ni estrellas
+        self.interior = self.numero in NIVELES_INTERIOR
+
+        self._color_oscuro = INTERIOR_OSCURO_COLOR if self.interior else OSCURO_COLOR
+
+        # Filas del dibujo de cada nube que quedan arriba de donde se pisa
+        self._filas_arriba = NUBE_FILAS_ARRIBA
+
+        # Luces animadas (destellos, postes, balizas, sol y luna): se leen de
+        # nivel_NN_efectos.json (si falta, el fondo se ve igual pero quieto)
+        self.efectos = None
+
+        # Cuanto se mueve el cielo (para ubicar el sol y la luna)
+        self._vel_cielo = 0.0
+
+        self._ancho_cielo = 0
+
+        # Resplandores ya hechos (se suman a lo que hay detras)
+        self._resplandores = {}
+
+        # Colores de las nubes: de dia blancas, de noche a la luz de la luna
+        if self.oscuro:
+
+            self._colores_nube = (
+                NUBE_NOCHE_BORDE, NUBE_NOCHE_LUZ, NUBE_NOCHE_MEDIO, NUBE_NOCHE_SOMBRA
+            )
+
+        else:
+
+            self._colores_nube = (
+                NUBE_COLOR_BORDE, NUBE_COLOR_LUZ, NUBE_COLOR_MEDIO, NUBE_COLOR_SOMBRA
+            )
 
         # Cada capa: [imagen, cuanto se mueve (0 a 1), fila desde donde hay
         # dibujo]. Solo se dibuja desde esa fila hacia abajo.
@@ -179,7 +253,7 @@ class FondoNivel:
 
             fila = min(imagen.get_bounding_rect().top, self.alto - 1)
 
-        return [imagen, velocidad, fila, vel_y]
+        return [imagen, velocidad, fila, vel_y, sufijo]
 
 
     def _cargar(self):
@@ -204,6 +278,8 @@ class FondoNivel:
 
                 if sufijo == "cielo":
                     self.cielo = capa[0]
+                    self._vel_cielo = capa[1]
+                    self._ancho_cielo = capa[0].get_width()
 
                 if sufijo == "ciudad":
                     self.ciudad = capa[0]
@@ -213,6 +289,32 @@ class FondoNivel:
             self.capas = []
             self.cielo = None
             self.ciudad = None
+
+        self._cargar_efectos()
+
+
+    def _cargar_efectos(self):
+        """Lee las luces animadas del nivel (es opcional: sin el, todo queda quieto)."""
+
+        ruta = os.path.join(
+            CARPETA_NIVELES,
+            "nivel_{:02d}_efectos.json".format(self.numero)
+        )
+
+        try:
+
+            with open(ruta, encoding="utf-8") as archivo:
+
+                datos = json.load(archivo)
+
+            # que tenga la forma esperada
+            if isinstance(datos.get("capas"), dict):
+
+                self.efectos = datos
+
+        except (OSError, ValueError, AttributeError):
+
+            self.efectos = None
 
 
     @property
@@ -252,7 +354,7 @@ class FondoNivel:
 
             alfa = int(OSCURO_ALFA_MAX * self.oscuridad(y_mundo))
 
-            superficie.fill(OSCURO_COLOR + (alfa,), (0, fila, self.ancho, 1))
+            superficie.fill(self._color_oscuro + (alfa,), (0, fila, self.ancho, 1))
 
         self._degradado = superficie
 
@@ -286,10 +388,15 @@ class FondoNivel:
 
             alto = min(self.alto, self._degradado_arriba - camara_y)
 
-            pantalla.fill(OSCURO_COLOR, (0, 0, self.ancho, alto))
+            pantalla.fill(self._color_oscuro, (0, 0, self.ancho, alto))
 
 
     def _dibujar_estrellas(self, pantalla, camara_x, camara_y):
+
+        # (por dentro no hay cielo: no hay estrellas)
+        if self.interior:
+
+            return
 
         if self.oscuridad(camara_y + self.alto) <= ESTRELLAS_DESDE:
 
@@ -426,19 +533,19 @@ class FondoNivel:
 
                 if any(vecinos):
 
-                    color = NUBE_COLOR_BORDE
+                    color = self._colores_nube[0]
 
                 elif f <= superficie + 1:
 
-                    color = NUBE_COLOR_LUZ
+                    color = self._colores_nube[1]
 
                 elif f <= superficie + 3:
 
-                    color = NUBE_COLOR_MEDIO
+                    color = self._colores_nube[2]
 
                 else:
 
-                    color = NUBE_COLOR_SOMBRA
+                    color = self._colores_nube[3]
 
                 imagen.fill(color, (col * PX, f * PX, PX, PX))
 
@@ -459,7 +566,7 @@ class FondoNivel:
 
                 continue
 
-            if n.y < camara_y - 40 or n.y > camara_y + self.alto + 40:
+            if n.y < camara_y - 40 - self._filas_arriba * PX or n.y > camara_y + self.alto + 40:
 
                 continue
 
@@ -469,9 +576,307 @@ class FondoNivel:
                 imagen,
                 (
                     int(n.x0 - camara_x),
-                    int(n.y - camara_y) - NUBE_FILAS_ARRIBA * PX
+                    int(n.y - camara_y) - self._filas_arriba * PX
                 )
             )
+
+
+    # ------------------------------------------------------
+    # LUCES ANIMADAS (sol, luna, destellos, postes y balizas)
+    # ------------------------------------------------------
+
+    def _resplandor(self, radio, color, cuanto, pasos=None):
+        """
+        Una mancha de luz redonda (en escalones, como el resto del dibujo) para
+        sumar a lo que hay detras: negro afuera, mas claro hacia el centro. Las
+        grandes (sol, luna) llevan mas escalones para que no se noten los aros.
+        """
+
+        if pasos is None:
+
+            pasos = max(8, min(26, radio // 11))
+
+        # la intensidad cambia en cada cuadro (titilar): se redondea a escalones
+        # de 0.05 para no armar una imagen nueva todo el tiempo
+        cuanto = round(cuanto * 20) / 20.0
+
+        clave = (radio, tuple(color), cuanto, pasos)
+
+        sup = self._resplandores.get(clave)
+
+        if sup is None:
+
+            lado = radio * 2 + 1
+
+            sup = pygame.Surface((lado, lado))
+
+            sup.fill((0, 0, 0))
+
+            for i in range(pasos):
+
+                rad = int(radio * (1.0 - i / float(pasos)))
+
+                if rad < 1:
+
+                    break
+
+                f = cuanto * ((i + 1) / float(pasos)) ** 1.7
+
+                pygame.draw.circle(
+                    sup,
+                    tuple(min(255, int(c * f)) for c in color),
+                    (radio, radio),
+                    rad
+                )
+
+            if pygame.display.get_surface() is not None:
+
+                sup = sup.convert()
+
+            self._resplandores[clave] = sup
+
+        return sup
+
+
+    def _sumar_luz(self, pantalla, x, y, radio, color, cuanto):
+        """Suma un resplandor centrado en (x, y)."""
+
+        if cuanto < 0.03:
+
+            return
+
+        pantalla.blit(
+            self._resplandor(radio, color, cuanto),
+            (int(x) - radio, int(y) - radio),
+            special_flags=pygame.BLEND_RGB_ADD
+        )
+
+
+    def _dibujar_efectos_capa(self, pantalla, nombre, x_capa, oy, tiempo):
+        """
+        Las luces animadas de una capa (se dibujan justo despues de ella, asi
+        las capas de adelante las tapan): destellos del sol en los vidrios,
+        luz de los postes y luces rojas que parpadean.
+        """
+
+        if self.efectos is None:
+
+            return
+
+        datos = self.efectos["capas"].get(nombre)
+
+        if not datos:
+
+            return
+
+        ancho = self.ancho
+
+        alto = self.alto
+
+        # ---- destellos del sol: titilan, cada uno a su ritmo
+        for ax, ay, tam, periodo, fase in datos.get("brillos", ()):
+
+            sx = ax * PX - x_capa
+
+            sy = ay * PX + oy
+
+            if sx < -40 or sx > ancho + 40 or sy < -40 or sy > alto + 40:
+
+                continue
+
+            ciclo = (tiempo / periodo + fase) % 1.0
+
+            if ciclo >= DESTELLO_DURACION:
+
+                continue
+
+            fuerza = math.sin(math.pi * ciclo / DESTELLO_DURACION)
+
+            largo = int(round(tam * fuerza))
+
+            if largo <= 0:
+
+                continue
+
+            pantalla.fill(DESTELLO_COLOR, (sx, sy, PX, PX))
+
+            for k in range(1, largo + 1):
+
+                for dx, dy in ((k, 0), (-k, 0), (0, k), (0, -k)):
+
+                    pantalla.fill(
+                        DESTELLO_COLOR,
+                        (sx + dx * PX, sy + dy * PX, PX, PX)
+                    )
+
+            if largo >= 2:
+
+                self._sumar_luz(
+                    pantalla, sx + PX // 2, sy + PX // 2, 14,
+                    (255, 244, 200), 0.55 * fuerza
+                )
+
+        # ---- postes de luz: un resplandor que se suma, con un leve titilar
+        for ax, ay, radio, color, parpadea, fase in datos.get("lamparas", ()):
+
+            sx = ax * PX - x_capa
+
+            sy = ay * PX + oy
+
+            r_px = radio * PX
+
+            if sx < -r_px or sx > ancho + r_px or sy < -r_px or sy > alto + r_px:
+
+                continue
+
+            cuanto = 0.50 + 0.04 * math.sin(tiempo * 2.1 + fase * 40.0)
+
+            # algunas lamparas estan fallando: se apagan a ratos
+            if parpadea:
+
+                onda = math.sin(tiempo * 23.0 + fase * 50.0) * math.sin(tiempo * 5.1 + fase * 9.0)
+
+                if onda > 0.55:
+
+                    cuanto *= 0.25
+
+            self._sumar_luz(pantalla, sx + PX // 2, sy + PX // 2, r_px, color, cuanto)
+
+        # ---- luces rojas de aviso: prenden y apagan
+        for ax, ay, color, radio, periodo, fase in datos.get("balizas", ()):
+
+            sx = ax * PX - x_capa
+
+            sy = ay * PX + oy
+
+            if sx < -30 or sx > ancho + 30 or sy < -30 or sy > alto + 30:
+
+                continue
+
+            if (tiempo / periodo + fase) % 1.0 >= BALIZA_PRENDIDA:
+
+                continue
+
+            pantalla.fill(tuple(color), (sx, sy, PX, PX))
+
+            self._sumar_luz(
+                pantalla, sx + PX // 2, sy + PX // 2, radio * PX, color, 0.60
+            )
+
+
+    def _luces(self, dibujar, *argumentos):
+        """
+        Dibuja las luces animadas. Si el archivo de efectos esta mal armado (por
+        ejemplo, editado a mano) se apagan las luces animadas y el juego sigue.
+        """
+
+        if self.efectos is None:
+
+            return
+
+        try:
+
+            dibujar(*argumentos)
+
+        except (ValueError, TypeError, KeyError, IndexError):
+
+            self.efectos = None
+
+
+    def _disco_pixelado(self, radio, color, cuanto):
+        """Disco de pixeles grandes (reflejo de lente), para sumar."""
+
+        cuanto = round(cuanto * 40) / 40.0
+
+        clave = ("disco", radio, tuple(color), cuanto)
+
+        sup = self._resplandores.get(clave)
+
+        if sup is None:
+
+            lado = radio * 2 + 1
+
+            chico = pygame.Surface((lado, lado))
+
+            chico.fill((0, 0, 0))
+
+            col = tuple(int(c * cuanto) for c in color)
+
+            pygame.draw.circle(chico, col, (radio, radio), radio)
+
+            sup = pygame.transform.scale(chico, (lado * PX, lado * PX))
+
+            if pygame.display.get_surface() is not None:
+
+                sup = sup.convert()
+
+            self._resplandores[clave] = sup
+
+        return sup
+
+
+    def _dibujar_astro(self, pantalla, camara_x, camara_y, tiempo):
+        """
+        El brillo del sol (con reflejos de lente) o de la luna, sumado por encima
+        de todo el fondo: el sol le da a los edificios y a las nubes. Se apaga a
+        medida que se sube y el cielo se pone negro.
+        """
+
+        if self.efectos is None:
+
+            return
+
+        astro = self.efectos.get("astro")
+
+        if not astro or self._ancho_cielo <= 0:
+
+            return
+
+        visible = 1.0 - min(1.0, self.oscuridad(camara_y + self.alto * 0.5) * 1.5)
+
+        if visible <= 0.02:
+
+            return
+
+        x_cielo = max(0, min(int(camara_x * self._vel_cielo), self._ancho_cielo - self.ancho))
+
+        sx = astro["x"] * PX + PX // 2 - x_cielo
+
+        sy = astro["y"] * PX + PX // 2 - int(camara_y * CAPAS[0][2])
+
+        if astro["tipo"] == "sol":
+
+            pulso = 0.93 + 0.07 * math.sin(tiempo * 1.3)
+
+            for radio, color, cuanto in SOL_BRILLO:
+
+                self._sumar_luz(pantalla, sx, sy, radio, color, cuanto * pulso * visible)
+
+            # reflejos de lente: sobre la recta del sol al centro de la pantalla
+            if -60 < sx < self.ancho + 60 and -60 < sy < self.alto + 60:
+
+                cx = self.ancho / 2.0
+
+                cy = self.alto / 2.0
+
+                for fraccion, radio, color, cuanto in REFLEJOS_LENTE:
+
+                    disco = self._disco_pixelado(radio, color, cuanto * visible)
+
+                    pantalla.blit(
+                        disco,
+                        (
+                            int(sx + (cx - sx) * fraccion) - disco.get_width() // 2,
+                            int(sy + (cy - sy) * fraccion) - disco.get_height() // 2
+                        ),
+                        special_flags=pygame.BLEND_RGB_ADD
+                    )
+
+        else:
+
+            for radio, color, cuanto in LUNA_BRILLO:
+
+                self._sumar_luz(pantalla, sx, sy, radio, color, cuanto * visible)
 
 
     # ------------------------------------------------------
@@ -494,7 +899,9 @@ class FondoNivel:
 
             return
 
-        for imagen, velocidad, fila, vel_y in self.capas:
+        tiempo = pygame.time.get_ticks() / 1000.0
+
+        for imagen, velocidad, fila, vel_y, nombre in self.capas:
 
             x = int(camara_x * velocidad)
 
@@ -533,7 +940,12 @@ class FondoNivel:
                 (x, fila, self.ancho, imagen.get_height() - fila)
             )
 
+            # luces animadas de esta capa (las de adelante las tapan)
+            self._luces(self._dibujar_efectos_capa, pantalla, nombre, x, oy, tiempo)
+
         self._dibujar_nubes(pantalla, camara_x, camara_y)
+
+        self._luces(self._dibujar_astro, pantalla, camara_x, camara_y, tiempo)
 
 
     def _dibujar_simple(self, pantalla, camara_x, camara_y=0):

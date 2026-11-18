@@ -44,6 +44,18 @@ CARPETA_NIVELES = os.path.join(CARPETA, "assets", "niveles")
 
 NIVEL_ANCHO = 9600
 
+# Cuantos niveles hay (con terreno propio): del 1 al 30
+TOTAL_TERRENOS = 30
+
+# Las arenas de los jefes (niveles 15 y 30) son cortas: el JSON trae "ancho"
+ANCHO_ARENA = 1600
+
+# La meta (el mastil) queda tanto antes del borde derecho del nivel
+META_MARGEN = 100
+
+# x donde arranca el jugador (el JSON puede traer otro: "inicio_x")
+INICIO_X = 100
+
 # Pixeles de pantalla por pixel de dibujo
 PX = 3
 
@@ -255,10 +267,25 @@ class Terreno:
         edificios,
         balcones,
         nivel=0,
-        escaleras=None
+        escaleras=None,
+        ancho=NIVEL_ANCHO,
+        interior=False,
+        inicio_x=INICIO_X
     ):
 
         self.nivel = nivel
+
+        # x donde arranca el jugador (el nivel 2 arranca en la puerta del
+        # Huergo, no en el borde izquierdo)
+        self.inicio_x = int(inicio_x)
+
+        # Ancho del nivel (9600; las arenas de jefe son mas cortas)
+        self.ancho = ancho
+
+        # Nivel "por dentro" (el Instituto Huergo, nivel 1): un solo piso, el
+        # de la calle. No hay techos a donde subir, ni escaleras, ni nubes.
+        # Los edificios del JSON son solo la pared de fondo.
+        self.interior = bool(interior)
 
         self.edificios = edificios
 
@@ -297,7 +324,10 @@ class Terreno:
             edificios,
             balcones,
             datos.get("nivel", 0),
-            escaleras
+            escaleras,
+            int(datos.get("ancho", NIVEL_ANCHO)),
+            bool(datos.get("interior", False)),
+            int(datos.get("inicio_x", INICIO_X))
         )
 
     @classmethod
@@ -317,8 +347,8 @@ class Terreno:
         devuelve un terreno plano, asi el juego nunca se rompe.
         """
 
-        # El mapa da la vuelta: el nivel 16 usa el terreno del 1, etc.
-        numero = ((max(1, int(nivel)) - 1) % 15) + 1
+        # Hay un terreno por nivel (1 a 30); pasado el 30 da la vuelta
+        numero = ((max(1, int(nivel)) - 1) % TOTAL_TERRENOS) + 1
 
         ruta = os.path.join(
             CARPETA_NIVELES,
@@ -338,6 +368,21 @@ class Terreno:
     # ------------------------------------------------------
     # CONSULTAS
     # ------------------------------------------------------
+
+    @property
+    def meta_x(self):
+        """x del mastil de la meta (cerca del borde derecho del nivel)."""
+
+        return self.ancho - META_MARGEN
+
+    @property
+    def tiene_calle(self):
+        """
+        True si el nivel arranca en la calle (hay escaleras para subir a los
+        techos, o es un nivel interior que solo tiene el piso de abajo).
+        """
+
+        return bool(self.escaleras) or self.interior
 
     def edificio_en(self, x):
         """El edificio que esta en la columna x (el ultimo si se pasa)."""
@@ -627,6 +672,13 @@ class Terreno:
         tienen dos (el camino se bifurca). herramientas/probar_nubes.py prueba
         con la fisica real que de cada padre se llega a sus hijas.
         """
+
+        # Por dentro del Huergo no hay cielo
+        if self.interior:
+
+            self.nubes = []
+
+            return
 
         nubes = []
 
@@ -1247,14 +1299,24 @@ class Terreno:
     # CALLE: enemigos y bebidas
     # ------------------------------------------------------
 
-    def tramos_calle(self, desde=CALLE_INICIO_LIBRE, hasta=None):
+    def calle_desde(self):
+        """
+        Desde donde se pueden poner cosas en la calle: pasado el arranque (si el
+        nivel arranca mas adelante, como el 2, el tramo libre se corre igual).
+        """
+
+        return max(CALLE_INICIO_LIBRE, self.inicio_x + CALLE_INICIO_LIBRE - INICIO_X)
+
+    def tramos_calle(self, desde=None, hasta=None):
         """
         Tramos de la calle donde se pueden poner cosas: sin el arranque, sin
         el final, y sin el alrededor de las escaleras. Devuelve
         [(x0, x1)] ordenados.
         """
 
-        hasta = NIVEL_ANCHO - CALLE_FIN_LIBRE if hasta is None else hasta
+        desde = self.calle_desde() if desde is None else desde
+
+        hasta = self.ancho - CALLE_FIN_LIBRE if hasta is None else hasta
 
         prohibidos = []
 
@@ -1372,7 +1434,7 @@ class Terreno:
         """
 
         lugares = self._repartir_en_tramos(
-            len(tipos), self.tramos_calle(CALLE_INICIO_LIBRE - 200), ESPACIO_ITEMS
+            len(tipos), self.tramos_calle(self.calle_desde() - 200), ESPACIO_ITEMS
         )
 
         return [

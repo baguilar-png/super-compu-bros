@@ -1,0 +1,250 @@
+{
+ "nivel": 25,
+ "ancho": 9600,
+ "edificios": [
+  {
+   "x0": 0,
+   "x1": 900,
+   "y": 480,
+   "tier": 0,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 900,
+   "x1": 1317,
+   "y": 480,
+   "tier": 0,
+   "estilo": "casa_baja"
+  },
+  {
+   "x0": 1317,
+   "x1": 1944,
+   "y": 264,
+   "tier": 2,
+   "estilo": "local"
+  },
+  {
+   "x0": 1944,
+   "x1": 2310,
+   "y": 372,
+   "tier": 1,
+   "estilo": "galpon"
+  },
+  {
+   "x0": 2310,
+   "x1": 2841,
+   "y": 264,
+   "tier": 2,
+   "estilo": "departamentos"
+  },
+  {
+   "x0": 2841,
+   "x1": 3162,
+   "y": 480,
+   "tier": 0,
+   "estilo": "casa_baja"
+  },
+  {
+   "x0": 3162,
+   "x1": 3648,
+   "y": 372,
+   "tier": 1,
+   "estilo": "galpon"
+  },
+  {
+   "x0": 3648,
+   "x1": 3963,
+   "y": 480,
+   "tier": 0,
+   "estilo": "local"
+  },
+  {
+   "x0": 3963,
+   "x1": 4374,
+   "y": 372,
+   "tier": 1,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 4374,
+   "x1": 4815,
+   "y": 264,
+   "tier": 2,
+   "estilo": "departamentos"
+  },
+  {
+   "x0": 4815,
+   "x1": 5262,
+   "y": 480,
+   "tier": 0,
+   "estilo": "local"
+  },
+  {
+   "x0": 5262,
+   "x1": 5679,
+   "y": 372,
+   "tier": 1,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 5679,
+   "x1": 6099,
+   "y": 264,
+   "tier": 2,
+   "estilo": "art_deco"
+  },
+  {
+   "x0": 6099,
+   "x1": 6729,
+   "y": 264,
+   "tier": 2,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 6729,
+   "x1": 7146,
+   "y": 480,
+   "tier": 0,
+   "estilo": "casa_baja"
+  },
+  {
+   "x0": 7146,
+   "x1": 7533,
+   "y": 372,
+   "tier": 1,
+   "estilo": "local"
+  },
+  {
+   "x0": 7533,
+   "x1": 8112,
+   "y": 264,
+   "tier": 2,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 8112,
+   "x1": 8526,
+   "y": 480,
+   "tier": 0,
+   "estilo": "galpon"
+  },
+  {
+   "x0": 8526,
+   "x1": 8865,
+   "y": 372,
+   "tier": 1,
+   "estilo": "fabrica"
+  },
+  {
+   "x0": 8865,
+   "x1": 9600,
+   "y": 480,
+   "tier": 0,
+   "estilo": "casa_baja"
+  }
+ ],
+ "balcones": [
+  {
+   "x0": 1209,
+   "x1": 1317,
+   "y": 372,
+   "lado": "izq",
+   "edificio": 2
+  },
+  {
+   "x0": 1944,
+   "x1": 2052,
+   "y": 300,
+   "lado": "der",
+   "edificio": 2
+  },
+  {
+   "x0": 2202,
+   "x1": 2310,
+   "y": 300,
+   "lado": "izq",
+   "edificio": 4
+  },
+  {
+   "x0": 2841,
+   "x1": 2949,
+   "y": 372,
+   "lado": "der",
+   "edificio": 4
+  },
+  {
+   "x0": 4266,
+   "x1": 4374,
+   "y": 300,
+   "lado": "izq",
+   "edificio": 9
+  },
+  {
+   "x0": 4815,
+   "x1": 4923,
+   "y": 372,
+   "lado": "der",
+   "edificio": 9
+  },
+  {
+   "x0": 5571,
+   "x1": 5679,
+   "y": 300,
+   "lado": "izq",
+   "edificio": 12
+  },
+  {
+   "x0": 6729,
+   "x1": 6837,
+   "y": 372,
+   "lado": "der",
+   "edificio": 13
+  },
+  {
+   "x0": 7425,
+   "x1": 7533,
+   "y": 300,
+   "lado": "izq",
+   "edificio": 16
+  },
+  {
+   "x0": 8112,
+   "x1": 8220,
+   "y": 372,
+   "lado": "der",
+   "edificio": 16
+  }
+ ],
+ "escaleras": [
+  {
+   "x": 1140,
+   "y": 480,
+   "edificio": 1
+  },
+  {
+   "x": 3798,
+   "y": 480,
+   "edificio": 7
+  },
+  {
+   "x": 4965,
+   "y": 480,
+   "edificio": 10
+  },
+  {
+   "x": 6399,
+   "y": 264,
+   "edificio": 13
+  },
+  {
+   "x": 7356,
+   "y": 372,
+   "edificio": 15
+  },
+  {
+   "x": 8706,
+   "y": 372,
+   "edificio": 18
+  }
+ ]
+}

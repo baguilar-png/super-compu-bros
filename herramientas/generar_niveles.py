@@ -1,5 +1,5 @@
 """
-Genera las imagenes pixel art de los 15 niveles de Super Compu Bros.
+Genera las imagenes pixel art de los 30 niveles de Super Compu Bros.
 
 Para cada nivel produce:
 
@@ -13,7 +13,7 @@ y la ciudad pegada al nivel, un pixel de dibujo = 3 pixeles de pantalla.
 
 Uso (desde la carpeta del juego):
 
-    python herramientas/generar_niveles.py            # los 15 niveles
+    python herramientas/generar_niveles.py            # los 30 niveles
     python herramientas/generar_niveles.py 1 4 12     # solo esos
     python herramientas/generar_niveles.py --vista    # ademas, vistas previas
 
@@ -435,7 +435,7 @@ def hacer_cielo(n, cfg):
     # luna
     if "luna" in cfg:
 
-        lx, ly, lr = cfg["luna"]
+        lx, ly, lr = cfg["luna"][:3]
 
         l.circulo(lx, ly, lr + 4, mezcla(medio, rgb("#ffffff"), 0.12))
         l.circulo(lx, ly, lr, rgb("#f4f1de"))
